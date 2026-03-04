@@ -1,0 +1,7 @@
+aiogram>=3.7.0
+telethon>=1.36.0
+python-dotenv>=1.0.1
+openai>=1.40.0
+ujson>=5.10.0
+loguru>=0.7.2
+openpyxl>=3.1.5

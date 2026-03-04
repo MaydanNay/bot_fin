@@ -1,0 +1,1 @@
+cd ~/belek_bot/FBOT/app && ./venv/bin/python main.py

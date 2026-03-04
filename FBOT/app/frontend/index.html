@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MotionHunter</title>
+    <!-- Telegram WebApp JS script -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: var(--tg-theme-bg-color, #18222d);
+            --text-color: var(--tg-theme-text-color, #ffffff);
+            --hint-color: var(--tg-theme-hint-color, #8e969d);
+            --link-color: var(--tg-theme-link-color, #2ca5e0);
+            --button-color: var(--tg-theme-button-color, #2ca5e0);
+            --button-text-color: var(--tg-theme-button-text-color, #ffffff);
+            --secondary-bg-color: var(--tg-theme-secondary-bg-color, #131415);
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --border-color: rgba(255, 255, 255, 0.1);
+            --success-color: #34c759;
+            --danger-color: #ff3b30;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 16px;
+            box-sizing: border-box;
+            overscroll-behavior-y: none;
+        }
+
+        h1,
+        h2,
+        h3 {
+            margin-top: 0;
+            font-weight: 600;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #2ca5e0, #a020f0);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .stat-val {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 4px;
+            color: var(--button-color);
+        }
+
+        .stat-label {
+            font-size: 13px;
+            color: var(--hint-color);
+        }
+
+        /* General Sections */
+        .section {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 16px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        /* Form elements */
+        label {
+            display: block;
+            font-size: 13px;
+            color: var(--hint-color);
+            margin-bottom: 6px;
+        }
+
+        textarea,
+        input[type="number"],
+        input[type="text"] {
+            width: 100%;
+            background-color: rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            border-radius: 8px;
+            padding: 12px;
+            font-family: inherit;
+            font-size: 14px;
+            box-sizing: border-box;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        textarea:focus,
+        input:focus {
+            border-color: var(--button-color);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        /* Buttons */
+        .btn {
+            background-color: var(--button-color);
+            color: var(--button-text-color);
+            border: none;
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-weight: 600;
+            font-size: 15px;
+            width: 100%;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .btn:active {
+            opacity: 0.8;
+        }
+
+        .btn-secondary {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: var(--text-color);
+        }
+
+        /* Toggle switch */
+        .toggle-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.2);
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked+.slider {
+            background-color: var(--success-color);
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(20px);
+        }
+
+        /* CRM Section */
+        #crm-send-btn {
+            background-color: #a020f0;
+            margin-top: 10px;
+        }
+
+        .badge {
+            background-color: rgba(255, 255, 255, 0.1);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+
+        /* Loading Overlay */
+        #loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-color);
+            z-index: 100;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top: 4px solid var(--button-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="loading">
+        <div class="spinner"></div>
+    </div>
+
+    <div class="header">
+        <div class="title">MotionHunter</div>
+        <div id="user-name" style="font-weight: 500; font-size: 14px; color: var(--hint-color)">User</div>
+    </div>
+
+    <div class="section toggle-row">
+        <div>
+            <div style="font-weight: 600; font-size: 16px; margin-bottom: 4px;">Статус рассылки</div>
+            <div style="font-size: 13px; color: var(--hint-color)">Включить поиск заказов</div>
+        </div>
+        <label class="switch">
+            <input type="checkbox" id="power-toggle">
+            <span class="slider"></span>
+        </label>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-val" id="stat-sent-today">0</div>
+            <div class="stat-label">Откликов за сегодня</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-val" id="stat-crm-size" style="color: #a020f0;">0</div>
+            <div class="stat-label">Людей в базе CRM</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">Шаблон отклика</div>
+        <textarea id="reply-text" placeholder="Привет! Я 3D аниматор..."></textarea>
+        <button class="btn btn-secondary" style="margin-top: 10px;" onclick="saveConfig()">Сохранить шаблон</button>
+    </div>
+
+    <div class="section">
+        <div class="section-title">🔑 Ключевые слова</div>
+        <label>Слова через запятую. Сообщение должно содержать хотя бы одно слово + слово действия (ищу, надо,
+            нужен).</label>
+        <textarea id="keywords-text" placeholder="3d, анимация, motion..."></textarea>
+        <button class="btn btn-secondary" style="margin-top: 10px;" onclick="saveConfig()">Сохранить слова</button>
+    </div>
+
+    <div class="section" style="border-color: rgba(160, 32, 240, 0.3);">
+        <div class="section-title">
+            <span style="color: #a020f0">🚀 CRM Рассылка</span>
+        </div>
+        <label>Отправка сообщения всем контактам из базы (которые писали боту). Лимит за один запуск:</label>
+        <input type="number" id="crm-limit" value="50" style="margin-bottom: 12px;">
+        <label>Текст рекламной рассылки:</label>
+        <textarea id="crm-text" placeholder="Привет! В этом месяце скидка 20% на новые ролики!"></textarea>
+        <button class="btn" id="crm-send-btn" onclick="startMassMailing()">Сделать массовую рассылку</button>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // Открываем приложение на весь экран
+
+        const API_BASE = ""; // Relative to the window.location
+        let userId = null;
+        let initData = tg.initData || "";
+
+        // UI Элементы
+        const powerToggle = document.getElementById('power-toggle');
+        const replyText = document.getElementById('reply-text');
+        const keywordsText = document.getElementById('keywords-text');
+        const statSent = document.getElementById('stat-sent-today');
+        const statCrm = document.getElementById('stat-crm-size');
+        const crmLimit = document.getElementById('crm-limit');
+
+        // Получаем UID юзера
+        if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+            userId = tg.initDataUnsafe.user.id;
+            document.getElementById('user-name').innerText = tg.initDataUnsafe.user.first_name || "User";
+        } else {
+            // Для теста в браузере (не внутри телеграма)
+            const inputId = prompt("Вы открыли сайт НЕ через Telegram Mini App.\n\nВведите ваш Telegram ID для тестирования (одни цифры):", "");
+            if (inputId) {
+                userId = parseInt(inputId.trim());
+                document.getElementById('user-name').innerText = "Test User " + userId;
+            } else {
+                alert("ID не введен. Приложение не сможет загрузить данные.");
+                document.getElementById('loading').style.display = 'none';
+                throw new Error("No User ID");
+            }
+        }
+
+        async function fetchState() {
+            try {
+                const res = await fetch(`${API_BASE}/api/state?uid=${userId}`, {
+                    headers: { 'X-Telegram-Init-Data': initData }
+                });
+                if (!res.ok) throw new Error("API error");
+                const data = await res.json();
+
+                if (data.error) {
+                    tg.showAlert(data.error);
+                    return;
+                }
+
+                // Заполняем интерфейс
+                powerToggle.checked = data.enabled || false;
+                replyText.value = data.reply_text || "";
+                keywordsText.value = (data.keywords || []).join(', ');
+                statSent.innerText = (data.daily_stats && data.daily_stats.sent) ? data.daily_stats.sent : 0;
+                statCrm.innerText = (data.mailing_list || []).length;
+                crmLimit.value = data.mail_limit || 50;
+
+                document.getElementById('loading').style.display = 'none';
+            } catch (e) {
+                console.error(e);
+                tg.showAlert("Ошибка связи с сервером");
+            }
+        }
+
+        async function saveConfig() {
+            tg.HapticFeedback.impactOccurred('medium');
+
+            const payload = {
+                uid: userId.toString(),
+                enabled: powerToggle.checked,
+                reply_text: replyText.value,
+                keywords: keywordsText.value.split(',').map(s => s.trim()).filter(s => s),
+                mail_limit: parseInt(crmLimit.value) || 50
+            };
+
+            const btn = document.activeElement;
+            const originalText = btn.innerText;
+            btn.innerText = "⏳ Сохранение...";
+
+            try {
+                const res = await fetch(`${API_BASE}/api/update`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Telegram-Init-Data': initData
+                    },
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    btn.innerText = "✅ Сохранено";
+                    setTimeout(() => btn.innerText = originalText, 2000);
+                }
+            } catch (e) {
+                tg.showAlert("Не удалось сохранить настройки");
+                btn.innerText = "❌ Ошибка";
+            }
+        }
+
+        async function startMassMailing() {
+            const text = document.getElementById('crm-text').value.trim();
+            if (!text) {
+                tg.showAlert("Введите текст для рассылки!");
+                return;
+            }
+
+            tg.showConfirm(`Запустить рассылку текста для ${crmLimit.value} контактов из базы? Это займет некоторое время.`, async (confirmed) => {
+                if (!confirmed) return;
+
+                const btn = document.getElementById('crm-send-btn');
+                btn.innerText = "⏳ Рассылка запущена...";
+                btn.disabled = true;
+                btn.style.opacity = "0.5";
+
+                try {
+                    const res = await fetch(`${API_BASE}/api/mail`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Telegram-Init-Data': initData
+                        },
+                        body: JSON.stringify({
+                            uid: userId.toString(),
+                            text: text
+                        })
+                    });
+
+                    const result = await res.json();
+                    if (res.ok) {
+                        tg.showAlert(`Рассылка завершена!\nУспешно отправлено: ${result.sent}\nОшибок: ${result.errors}`);
+                        document.getElementById('crm-text').value = ""; // Очищаем поле
+                    } else {
+                        tg.showAlert(result.error || "Ошибка рассылки");
+                    }
+                } catch (e) {
+                    tg.showAlert("Сетевая ошибка при запуске рассылки");
+                } finally {
+                    btn.innerText = "Сделать массовую рассылку";
+                    btn.disabled = false;
+                    btn.style.opacity = "1";
+                    fetchState(); // Обновляем статусы
+                }
+            });
+        }
+
+        // Авто-сохранение при клике на свитч
+        powerToggle.addEventListener('change', () => {
+            saveConfig();
+        });
+
+        // Main button
+        tg.MainButton.setText("ЗАКРЫТЬ");
+        tg.MainButton.onClick(() => tg.close());
+        tg.MainButton.show();
+
+        // Запуск
+        fetchState();
+    </script>
+</body>
+
+</html>
