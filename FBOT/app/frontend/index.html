@@ -1,474 +1,662 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <title>MotionHunter</title>
     <!-- Telegram WebApp JS script -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <!-- QR Code Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
-        :root {
-            --bg-color: var(--tg-theme-bg-color, #18222d);
-            --text-color: var(--tg-theme-text-color, #ffffff);
-            --hint-color: var(--tg-theme-hint-color, #8e969d);
-            --link-color: var(--tg-theme-link-color, #2ca5e0);
-            --button-color: var(--tg-theme-button-color, #2ca5e0);
-            --button-text-color: var(--tg-theme-button-text-color, #ffffff);
-            --secondary-bg-color: var(--tg-theme-secondary-bg-color, #131415);
-            --card-bg: rgba(255, 255, 255, 0.05);
-            --border-color: rgba(255, 255, 255, 0.1);
-            --success-color: #34c759;
-            --danger-color: #ff3b30;
-        }
+      :root {
+        --bg-color: var(--tg-theme-bg-color, #0f172a);
+        --text-color: var(--tg-theme-text-color, #f8fafc);
+        --hint-color: var(--tg-theme-hint-color, #94a3b8);
+        --link-color: var(--tg-theme-link-color, #38bdf8);
+        --button-color: var(--tg-theme-button-color, #38bdf8);
+        --button-text-color: var(--tg-theme-button-text-color, #ffffff);
+        --secondary-bg-color: var(--tg-theme-secondary-bg-color, #1e293b);
+        --card-bg: rgba(255, 255, 255, 0.03);
+        --border-color: rgba(255, 255, 255, 0.08);
+        --success-color: #10b981;
+        --danger-color: #ef4444;
+        --accent-gradient: linear-gradient(135deg, #38bdf8, #818cf8);
+        --purple-gradient: linear-gradient(135deg, #a855f7, #6366f1);
+      }
 
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            margin: 0;
-            padding: 16px;
-            box-sizing: border-box;
-            overscroll-behavior-y: none;
-        }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
 
-        h1,
-        h2,
-        h3 {
-            margin-top: 0;
-            font-weight: 600;
-        }
+      body {
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        padding: 24px 16px 100px;
+        overscroll-behavior-y: none;
+        line-height: 1.5;
+      }
 
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 24px;
-        }
+      h1, h2, h3 { margin-top: 0; font-weight: 700; }
 
-        .title {
-            font-size: 24px;
-            font-weight: 700;
-            background: linear-gradient(135deg, #2ca5e0, #a020f0);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 32px;
+      }
 
-        /* Stats Cards */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            margin-bottom: 24px;
-        }
+      .title {
+        font-size: 28px;
+        font-weight: 800;
+        background: var(--accent-gradient);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        letter-spacing: -1px;
+      }
 
-        .stat-card {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 16px;
-            text-align: center;
-        }
+      #user-name {
+        font-weight: 600;
+        font-size: 14px;
+        background: rgba(255,255,255,0.05);
+        padding: 6px 12px;
+        border-radius: 12px;
+        color: var(--hint-color);
+        border: 1px solid var(--border-color);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      #user-name::before {
+        content: '';
+        width: 6px;
+        height: 6px;
+        background: var(--success-color);
+        border-radius: 50%;
+        box-shadow: 0 0 8px var(--success-color);
+      }
 
-        .stat-val {
-            font-size: 28px;
-            font-weight: 700;
-            margin-bottom: 4px;
-            color: var(--button-color);
-        }
+      /* Stats Cards */
+      .stats-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 32px;
+      }
 
-        .stat-label {
-            font-size: 13px;
-            color: var(--hint-color);
-        }
+      .stat-card {
+        background-color: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        padding: 24px 16px;
+        text-align: center;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      }
 
-        /* General Sections */
-        .section {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 20px;
-        }
+      .stat-val {
+        font-size: 32px;
+        font-weight: 800;
+        margin-bottom: 4px;
+        color: var(--button-color);
+        letter-spacing: -1px;
+      }
 
-        .section-title {
-            font-size: 16px;
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
+      .stat-label {
+        font-size: 11px;
+        color: var(--hint-color);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-weight: 600;
+      }
 
-        /* Form elements */
-        label {
-            display: block;
-            font-size: 13px;
-            color: var(--hint-color);
-            margin-bottom: 6px;
-        }
+      /* General Sections */
+      .section {
+        background-color: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        padding: 20px;
+        margin-bottom: 24px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      }
 
-        textarea,
-        input[type="number"],
-        input[type="text"] {
-            width: 100%;
-            background-color: rgba(0, 0, 0, 0.1);
-            border: 1px solid var(--border-color);
-            color: var(--text-color);
-            border-radius: 8px;
-            padding: 12px;
-            font-family: inherit;
-            font-size: 14px;
-            box-sizing: border-box;
-            outline: none;
-            transition: border-color 0.2s;
-        }
+      .section-title {
+        font-size: 14px;
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-weight: 700;
+        color: var(--hint-color);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
 
-        textarea:focus,
-        input:focus {
-            border-color: var(--button-color);
-        }
+      /* Form elements */
+      label {
+        display: block;
+        font-size: 12px;
+        color: var(--hint-color);
+        margin-bottom: 10px;
+        font-weight: 500;
+        line-height: 1.4;
+      }
 
-        textarea {
-            resize: vertical;
-            min-height: 80px;
-        }
+      textarea,
+      input[type="number"],
+      input[type="text"],
+      input[type="password"] {
+        width: 100%;
+        background-color: rgba(255, 255, 255, 0.03);
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+        border-radius: 12px;
+        padding: 14px;
+        font-family: inherit;
+        font-size: 14px;
+        box-sizing: border-box;
+        outline: none;
+        transition: all 0.2s;
+      }
 
-        /* Buttons */
-        .btn {
-            background-color: var(--button-color);
-            color: var(--button-text-color);
-            border: none;
-            border-radius: 8px;
-            padding: 12px 16px;
-            font-weight: 600;
-            font-size: 15px;
-            width: 100%;
-            cursor: pointer;
-            transition: opacity 0.2s;
-        }
+      textarea:focus,
+      input:focus {
+        border-color: var(--button-color);
+        background-color: rgba(255, 255, 255, 0.05);
+        box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+      }
 
-        .btn:active {
-            opacity: 0.8;
-        }
+      textarea { resize: vertical; min-height: 100px; }
 
-        .btn-secondary {
-            background-color: rgba(255, 255, 255, 0.1);
-            color: var(--text-color);
-        }
+      /* Buttons */
+      .btn {
+        background: var(--accent-gradient);
+        color: var(--button-text-color);
+        border: none;
+        border-radius: 14px;
+        padding: 16px 20px;
+        font-weight: 700;
+        font-size: 15px;
+        width: 100%;
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        box-shadow: 0 4px 15px rgba(56, 189, 248, 0.2);
+      }
 
-        /* Toggle switch */
-        .toggle-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
+      .btn:active {
+        transform: scale(0.98);
+        opacity: 0.9;
+      }
 
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 44px;
-            height: 24px;
-        }
+      .btn-secondary {
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--text-color);
+        border: 1px solid var(--border-color);
+        box-shadow: none;
+      }
+      .btn-secondary:active { background: rgba(255, 255, 255, 0.1); }
 
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
+      /* Toggle switch */
+      .toggle-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
 
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: rgba(255, 255, 255, 0.2);
-            transition: .4s;
-            border-radius: 34px;
-        }
+      .switch {
+        position: relative;
+        display: inline-block;
+        width: 50px;
+        height: 28px;
+      }
 
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 18px;
-            width: 18px;
-            left: 3px;
-            bottom: 3px;
-            background-color: white;
-            transition: .4s;
-            border-radius: 50%;
-        }
+      .switch input { opacity: 0; width: 0; height: 0; }
 
-        input:checked+.slider {
-            background-color: var(--success-color);
-        }
+      .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background-color: rgba(255, 255, 255, 0.1);
+        transition: 0.4s;
+        border-radius: 34px;
+      }
 
-        input:checked+.slider:before {
-            transform: translateX(20px);
-        }
+      .slider:before {
+        position: absolute;
+        content: "";
+        height: 22px;
+        width: 22px;
+        left: 3px;
+        bottom: 3px;
+        background-color: white;
+        transition: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        border-radius: 50%;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      }
 
-        /* CRM Section */
-        #crm-send-btn {
-            background-color: #a020f0;
-            margin-top: 10px;
-        }
+      input:checked + .slider { background: var(--success-color); }
+      input:checked + .slider:before { transform: translateX(22px); }
 
-        .badge {
-            background-color: rgba(255, 255, 255, 0.1);
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 12px;
-        }
+      /* CRM Section */
+      #crm-send-btn {
+        background: var(--purple-gradient);
+        margin-top: 12px;
+        box-shadow: 0 4px 15px rgba(168, 85, 247, 0.2);
+      }
 
-        /* Loading Overlay */
-        #loading {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: var(--bg-color);
-            z-index: 100;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
+      .badge {
+        background-color: rgba(56, 189, 248, 0.1);
+        padding: 4px 10px;
+        border-radius: 10px;
+        font-size: 11px;
+        color: var(--button-color);
+        font-weight: 700;
+      }
 
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid rgba(255, 255, 255, 0.1);
-            border-top: 4px solid var(--button-color);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
+      /* Bottom Nav - Glassmorphism */
+      .bottom-nav {
+        position: fixed;
+        bottom: 20px; left: 16px; right: 16px;
+        background: rgba(30, 41, 59, 0.7);
+        backdrop-filter: blur(20px) saturate(180%);
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 24px;
+        display: flex;
+        justify-content: space-around;
+        padding: 12px 8px;
+        z-index: 100;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+      }
 
-        @keyframes spin {
-            0% {
-                transform: rotate(0deg);
-            }
+      .nav-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        color: var(--hint-color);
+        text-decoration: none;
+        font-size: 11px;
+        font-weight: 600;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        flex: 1;
+        position: relative;
+      }
 
-            100% {
-                transform: rotate(360deg);
-            }
-        }
+      .nav-item.active { color: var(--button-color); }
+      .nav-icon { 
+        font-size: 24px; 
+        transition: transform 0.3s;
+      }
+      .nav-item.active .nav-icon {
+        transform: translateY(-4px);
+        filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.4));
+      }
+      .nav-item::after {
+        content: '';
+        position: absolute;
+        bottom: -4px;
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: var(--button-color);
+        opacity: 0;
+        transition: opacity 0.3s;
+      }
+      .nav-item.active::after { opacity: 1; }
+
+      /* Loading */
+      #loading {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: var(--bg-color); z-index: 1000;
+        display: flex; justify-content: center; align-items: center;
+      }
+      .spinner {
+        width: 44px; height: 44px;
+        border: 3px solid rgba(56, 189, 248, 0.1);
+        border-top: 3px solid var(--button-color);
+        border-radius: 50%;
+        animation: spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      }
+      @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+      /* Auth Modal */
+      #auth-backdrop {
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        z-index: 500;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+      #auth-screen {
+        background: #1e293b;
+        border: 1px solid var(--border-color);
+        border-radius: 24px;
+        padding: 32px 24px;
+        text-align: center;
+        width: 100%;
+        max-width: 360px;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        animation: modalIn 0.3s ease-out;
+      }
+      @keyframes modalIn {
+        from { transform: scale(0.9); opacity: 0; }
+        to   { transform: scale(1);    opacity: 1; }
+      }
     </style>
-</head>
+  </head>
 
-<body>
-
-    <div id="loading">
-        <div class="spinner"></div>
+  <body>
+    <!-- Auth Modal -->
+    <div id="auth-backdrop">
+      <div id="auth-screen">
+        <div class="title" style="font-size: 22px; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 10px;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--button-color)"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Авторизация
+        </div>
+        <div class="instructions" id="auth-instructions">Подготовка...</div>
+        <div id="qrcode-container" style="background:white; padding:16px; border-radius:16px; margin:20px 0;"></div>
+        <div id="password-input-container" style="display: none;">
+          <label>Введите 2FA пароль:</label>
+          <input type="password" id="2fa-password" style="margin-bottom: 16px" placeholder="Ваш пароль" />
+          <button class="btn" onclick="submit2FA()">Подтвердить</button>
+        </div>
+      </div>
     </div>
 
+    <div id="loading"><div class="spinner"></div></div>
+
     <div class="header">
-        <div class="title">MotionHunter</div>
-        <div id="user-name" style="font-weight: 500; font-size: 14px; color: var(--hint-color)">User</div>
+      <div class="title">MotionHunter</div>
+      <div id="user-name">User</div>
     </div>
 
     <div class="section toggle-row">
-        <div>
-            <div style="font-weight: 600; font-size: 16px; margin-bottom: 4px;">Статус рассылки</div>
-            <div style="font-size: 13px; color: var(--hint-color)">Включить поиск заказов</div>
-        </div>
-        <label class="switch">
-            <input type="checkbox" id="power-toggle">
-            <span class="slider"></span>
-        </label>
+      <div>
+        <div style="font-weight: 700; font-size: 17px; margin-bottom: 4px">Рассылка</div>
+        <div style="font-size: 13px; color: var(--hint-color)">Поиск заказов в каналах</div>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="power-toggle" />
+        <span class="slider"></span>
+      </label>
     </div>
 
     <div class="stats-grid">
-        <div class="stat-card">
-            <div class="stat-val" id="stat-sent-today">0</div>
-            <div class="stat-label">Откликов за сегодня</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-val" id="stat-crm-size" style="color: #a020f0;">0</div>
-            <div class="stat-label">Людей в базе CRM</div>
-        </div>
+      <div class="stat-card">
+        <div class="stat-val" id="stat-sent-today">0</div>
+        <div class="stat-label">Сегодня</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" id="stat-crm-size" style="background: var(--purple-gradient); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">0</div>
+        <div class="stat-label">База CRM</div>
+      </div>
     </div>
 
     <div class="section">
-        <div class="section-title">Шаблон отклика</div>
-        <textarea id="reply-text" placeholder="Привет! Я 3D аниматор..."></textarea>
-        <button class="btn btn-secondary" style="margin-top: 10px;" onclick="saveConfig()">Сохранить шаблон</button>
+      <div class="section-title">
+        Шаблон отклика <span class="badge">AI Ready</span>
+      </div>
+      <textarea id="reply-text" placeholder="Напишите текст вашего отклика здесь..."></textarea>
+      <button class="btn btn-secondary" style="margin-top: 12px" onclick="saveConfig()">Сохранить изменения</button>
     </div>
 
     <div class="section">
-        <div class="section-title">🔑 Ключевые слова</div>
-        <label>Слова через запятую. Сообщение должно содержать хотя бы одно слово + слово действия (ищу, надо,
-            нужен).</label>
-        <textarea id="keywords-text" placeholder="3d, анимация, motion..."></textarea>
-        <button class="btn btn-secondary" style="margin-top: 10px;" onclick="saveConfig()">Сохранить слова</button>
+      <div class="section-title">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--button-color)"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4a1 1 0 0 0-1.4 0l-2.1 2.1a1 1 0 0 0 0 1.4Z"/><path d="m15.5 7.5-3 3"/><path d="m13.5 13.5-3 3"/><path d="m11.5 19.5-3 3"/><path d="M5 21 3 23"/><path d="M17.3 5.3 15 3"/><path d="m9.7 12.9 4.4 4.4"/><path d="m5.3 17.3 4.4 4.4"/></svg>
+          Ключевые слова
+        </div>
+      </div>
+      <label>Бот ищет эти слова в сообщениях каналов. Указывайте через запятую.</label>
+      <textarea id="keywords-text" placeholder="3d, аниматор, motion, Blender..."></textarea>
+      <button class="btn btn-secondary" style="margin-top: 12px" onclick="saveConfig()">Сохранить слова</button>
     </div>
 
-    <div class="section" style="border-color: rgba(160, 32, 240, 0.3);">
-        <div class="section-title">
-            <span style="color: #a020f0">🚀 CRM Рассылка</span>
+    <div class="section" style="border: 1px solid rgba(168, 85, 247, 0.3); background: rgba(168, 85, 247, 0.02);">
+      <div class="section-title">
+        <div style="display: flex; align-items: center; gap: 8px; background: var(--purple-gradient); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: #a855f7;"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.71.79-1.81.79-1.81l-1.98-1.98s-1.1.08-1.81.79Z"/><path d="M15 8.5c.07-.07.11-.17.14-.28.19-.58.11-1.17-.4-1.69l-.17-.11c-.52-.51-1.11-.59-1.69-.4-.11.03-.21.07-.28.14l-1.14 1.14c-.1.1-.14.2-.17.3q-.12.42.11.83l.21.32c.1.15.2.25.32.32q.41.23.83.11c.1-.03.2-.07.3-.17Z"/><path d="M10 10l-1.5 1.5"/><path d="M13 13l-1.5 1.5"/><path d="M16 16l-1.5 1.5"/><path d="M21 3s-9 1-13 11l-2 2 5 5 2-2c10-4 11-13 11-13Z"/></svg>
+          Массовая рассылка
         </div>
-        <label>Отправка сообщения всем контактам из базы (которые писали боту). Лимит за один запуск:</label>
-        <input type="number" id="crm-limit" value="50" style="margin-bottom: 12px;">
-        <label>Текст рекламной рассылки:</label>
-        <textarea id="crm-text" placeholder="Привет! В этом месяце скидка 20% на новые ролики!"></textarea>
-        <button class="btn" id="crm-send-btn" onclick="startMassMailing()">Сделать массовую рассылку</button>
+      </div>
+      <label>Количество контактов:</label>
+      <input type="number" id="crm-limit" value="50" style="margin-bottom: 16px" />
+      <label>Текст сообщения:</label>
+      <textarea id="crm-text" placeholder="Текст для всех контактов в CRM базе..."></textarea>
+      <button class="btn" id="crm-send-btn" onclick="startMassMailing()">Запустить рассылку</button>
+    </div>
+
+    <div class="bottom-nav">
+      <a href="/" class="nav-item active">
+        <span class="nav-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        </span>
+        <span>Главная</span>
+      </a>
+      <a href="/crm" class="nav-item">
+        <span class="nav-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </span>
+        <span>CRM</span>
+      </a>
+      <a href="/profile" class="nav-item">
+        <span class="nav-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </span>
+        <span>Профиль</span>
+      </a>
     </div>
 
     <script>
-        const tg = window.Telegram.WebApp;
-        tg.expand(); // Открываем приложение на весь экран
+      const tg = window.Telegram.WebApp;
+      tg.expand();
 
-        const API_BASE = ""; // Relative to the window.location
-        let userId = null;
-        let initData = tg.initData || "";
+      const API_BASE = "";
+      let userId = localStorage.getItem("user_id");
+      let webToken = localStorage.getItem("web_token");
+      let initData = tg.initData || "";
 
-        // UI Элементы
-        const powerToggle = document.getElementById('power-toggle');
-        const replyText = document.getElementById('reply-text');
-        const keywordsText = document.getElementById('keywords-text');
-        const statSent = document.getElementById('stat-sent-today');
-        const statCrm = document.getElementById('stat-crm-size');
-        const crmLimit = document.getElementById('crm-limit');
+      const powerToggle = document.getElementById("power-toggle");
+      const replyText = document.getElementById("reply-text");
+      const keywordsText = document.getElementById("keywords-text");
+      const statSent = document.getElementById("stat-sent-today");
+      const statCrm = document.getElementById("stat-crm-size");
+      const crmLimit = document.getElementById("crm-limit");
 
-        // Получаем UID юзера
-        if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
-            userId = tg.initDataUnsafe.user.id;
-            document.getElementById('user-name').innerText = tg.initDataUnsafe.user.first_name || "User";
-        } else {
-            // Для теста в браузере (не внутри телеграма)
-            const inputId = prompt("Вы открыли сайт НЕ через Telegram Mini App.\n\nВведите ваш Telegram ID для тестирования (одни цифры):", "");
-            if (inputId) {
-                userId = parseInt(inputId.trim());
-                document.getElementById('user-name').innerText = "Test User " + userId;
-            } else {
-                alert("ID не введен. Приложение не сможет загрузить данные.");
-                document.getElementById('loading').style.display = 'none';
-                throw new Error("No User ID");
-            }
+      // Если в Mini App
+      if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+        userId = tg.initDataUnsafe.user.id;
+        document.getElementById("user-name").innerText = tg.initDataUnsafe.user.first_name || "User";
+      } else if (userId && webToken) {
+        // Если в браузере и есть токен
+        document.getElementById("user-name").innerText = "User " + userId;
+      } else {
+        // Если в браузере и НЕТ токена - показываем экран входа
+        document.getElementById("user-name").innerText = "Гость";
+        setTimeout(() => {
+            document.getElementById("loading").style.display = "none";
+            showQRAuthScreen();
+        }, 100);
+      }
+
+      function getAuthHeaders() {
+          const headers = { "Content-Type": "application/json" };
+          if (initData) headers["X-Telegram-Init-Data"] = initData;
+          if (webToken) headers["X-Web-Token"] = webToken;
+          return headers;
+      }
+
+      async function fetchState() {
+        if (!userId && !webToken && !initData) return;
+        try {
+          const res = await fetch(`${API_BASE}/api/state?uid=${userId}`, {
+            headers: getAuthHeaders(),
+          });
+          const data = await res.json();
+
+          if (!res.ok || data.error) {
+            if (res.status === 404) { showQRAuthScreen(); return; }
+            tg.showAlert(data.error);
+            return;
+          }
+
+          powerToggle.checked = data.enabled || false;
+          replyText.value = data.reply_text || "";
+          keywordsText.value = (data.keywords || []).join(", ");
+          statSent.innerText = data.daily_stats?.sent || 0;
+          statCrm.innerText = (data.mailing_list || []).length;
+          crmLimit.value = data.mail_limit || 50;
+
+          document.getElementById("loading").style.display = "none";
+        } catch (e) {
+          tg.showAlert("Ошибка подключения");
         }
+      }
 
-        async function fetchState() {
-            try {
-                const res = await fetch(`${API_BASE}/api/state?uid=${userId}`, {
-                    headers: { 'X-Telegram-Init-Data': initData }
-                });
-                if (!res.ok) throw new Error("API error");
-                const data = await res.json();
+      async function saveConfig() {
+        tg.HapticFeedback.impactOccurred("light");
+        const btn = event.target;
+        const oldText = btn.innerText;
+        btn.innerText = "⏳...";
 
-                if (data.error) {
-                    tg.showAlert(data.error);
-                    return;
-                }
-
-                // Заполняем интерфейс
-                powerToggle.checked = data.enabled || false;
-                replyText.value = data.reply_text || "";
-                keywordsText.value = (data.keywords || []).join(', ');
-                statSent.innerText = (data.daily_stats && data.daily_stats.sent) ? data.daily_stats.sent : 0;
-                statCrm.innerText = (data.mailing_list || []).length;
-                crmLimit.value = data.mail_limit || 50;
-
-                document.getElementById('loading').style.display = 'none';
-            } catch (e) {
-                console.error(e);
-                tg.showAlert("Ошибка связи с сервером");
-            }
+        try {
+          const res = await fetch(`${API_BASE}/api/update`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({
+              uid: userId.toString(),
+              enabled: powerToggle.checked,
+              reply_text: replyText.value,
+              keywords: keywordsText.value.split(",").map(k => k.trim()).filter(k => k),
+              mail_limit: parseInt(crmLimit.value) || 50,
+            }),
+          });
+          if (res.ok) {
+            btn.innerText = "✅ Готово";
+            setTimeout(() => btn.innerText = oldText, 2000);
+          }
+        } catch (e) {
+          tg.showAlert("Ошибка сохранения");
+          btn.innerText = "❌";
         }
+      }
 
-        async function saveConfig() {
-            tg.HapticFeedback.impactOccurred('medium');
+      async function startMassMailing() {
+        const text = document.getElementById("crm-text").value.trim();
+        if (!text) { tg.showAlert("Введите текст!"); return; }
 
-            const payload = {
-                uid: userId.toString(),
-                enabled: powerToggle.checked,
-                reply_text: replyText.value,
-                keywords: keywordsText.value.split(',').map(s => s.trim()).filter(s => s),
-                mail_limit: parseInt(crmLimit.value) || 50
-            };
-
-            const btn = document.activeElement;
-            const originalText = btn.innerText;
-            btn.innerText = "⏳ Сохранение...";
-
-            try {
-                const res = await fetch(`${API_BASE}/api/update`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Telegram-Init-Data': initData
-                    },
-                    body: JSON.stringify(payload)
-                });
-                if (res.ok) {
-                    btn.innerText = "✅ Сохранено";
-                    setTimeout(() => btn.innerText = originalText, 2000);
-                }
-            } catch (e) {
-                tg.showAlert("Не удалось сохранить настройки");
-                btn.innerText = "❌ Ошибка";
-            }
-        }
-
-        async function startMassMailing() {
-            const text = document.getElementById('crm-text').value.trim();
-            if (!text) {
-                tg.showAlert("Введите текст для рассылки!");
-                return;
-            }
-
-            tg.showConfirm(`Запустить рассылку текста для ${crmLimit.value} контактов из базы? Это займет некоторое время.`, async (confirmed) => {
-                if (!confirmed) return;
-
-                const btn = document.getElementById('crm-send-btn');
-                btn.innerText = "⏳ Рассылка запущена...";
-                btn.disabled = true;
-                btn.style.opacity = "0.5";
-
-                try {
-                    const res = await fetch(`${API_BASE}/api/mail`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Telegram-Init-Data': initData
-                        },
-                        body: JSON.stringify({
-                            uid: userId.toString(),
-                            text: text
-                        })
-                    });
-
-                    const result = await res.json();
-                    if (res.ok) {
-                        tg.showAlert(`Рассылка завершена!\nУспешно отправлено: ${result.sent}\nОшибок: ${result.errors}`);
-                        document.getElementById('crm-text').value = ""; // Очищаем поле
-                    } else {
-                        tg.showAlert(result.error || "Ошибка рассылки");
-                    }
-                } catch (e) {
-                    tg.showAlert("Сетевая ошибка при запуске рассылки");
-                } finally {
-                    btn.innerText = "Сделать массовую рассылку";
-                    btn.disabled = false;
-                    btn.style.opacity = "1";
-                    fetchState(); // Обновляем статусы
-                }
+        tg.showConfirm(`Рассылка на ${crmLimit.value} чел.?`, async (ok) => {
+          if (!ok) return;
+          const btn = document.getElementById("crm-send-btn");
+          btn.disabled = true;
+          try {
+            const res = await fetch(`${API_BASE}/api/mail`, {
+              method: "POST",
+              headers: getAuthHeaders(),
+              body: JSON.stringify({ uid: userId.toString(), text }),
             });
-        }
-
-        // Авто-сохранение при клике на свитч
-        powerToggle.addEventListener('change', () => {
-            saveConfig();
+            if (res.ok) {
+                tg.showAlert("Рассылка запущена!");
+                document.getElementById("crm-text").value = "";
+            } else {
+                const r = await res.json();
+                tg.showAlert(r.error);
+            }
+          } catch (e) { tg.showAlert("Сбой"); }
+          finally { btn.disabled = false; fetchState(); }
         });
+      }
 
-        // Main button
-        tg.MainButton.setText("ЗАКРЫТЬ");
-        tg.MainButton.onClick(() => tg.close());
-        tg.MainButton.show();
+      async function showQRAuthScreen() {
+          document.getElementById("auth-backdrop").style.display = "flex";
+          document.getElementById("loading").style.display = "none";
+          document.getElementById("qrcode-container").style.display = "block";
+          document.getElementById("password-input-container").style.display = "none";
+          document.getElementById("auth-instructions").innerText = "Подготовка...";
+          
+          try {
+            const res = await fetch(`${API_BASE}/api/qr_login`, {
+              method: "POST",
+              headers: getAuthHeaders(),
+              body: JSON.stringify({ uid: userId }),
+            });
+            const data = await res.json();
+            const qrContainer = document.getElementById("qrcode-container");
+            qrContainer.innerHTML = "";
+            new QRCode(qrContainer, { text: data.url, width: 220, height: 220 });
+            document.getElementById("auth-instructions").innerHTML = "Отсканируйте код в <b>Устройства ➡️ Подключить</b>";
+          pollQRStatus(data.session_id);
+        } catch (e) {
+             document.getElementById("auth-instructions").innerText = "Ошибка загрузки QR";
+        }
+      }
 
-        // Запуск
-        fetchState();
+      let _currentSessionId = null;
+      function pollQRStatus(id) {
+        _currentSessionId = id;
+        const interval = setInterval(async () => {
+          const res = await fetch(`${API_BASE}/api/qr_status`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ session_id: id }),
+          });
+          const data = await res.json();
+          if (data.status === "success") { 
+            clearInterval(interval); 
+            if (data.web_token) {
+               localStorage.setItem("web_token", data.web_token);
+               localStorage.setItem("user_id", data.uid);
+            }
+            location.reload(); 
+          }
+          else if (data.status === "2fa_required") {
+            clearInterval(interval);
+            document.getElementById("qrcode-container").style.display = "none";
+            document.getElementById("auth-instructions").innerText = "Введите пароль 2FA:";
+            document.getElementById("password-input-container").style.display = "block";
+          }
+        }, 3000);
+      }
+
+      async function submit2FA() {
+        const password = document.getElementById("2fa-password").value;
+        if (!password) return;
+        const res = await fetch(`${API_BASE}/api/2fa`, {
+          method: "POST",
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ session_id: _currentSessionId, password }),
+        });
+        const data = await res.json();
+        if (data.status === "success") {
+            if (data.web_token) {
+               localStorage.setItem("web_token", data.web_token);
+               localStorage.setItem("user_id", data.uid);
+            }
+            location.reload();
+        } else tg.showAlert("Неверный пароль");
+      }
+
+      powerToggle.addEventListener("change", saveConfig);
+      fetchState();
     </script>
-</body>
-
+  </body>
+</html>
+  </body>
 </html>

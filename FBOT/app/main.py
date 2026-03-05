@@ -13,8 +13,15 @@ import random
 import asyncio
 import logging
 import pathlib
+import uuid
+import hmac
+import hashlib
+from urllib.parse import parse_qsl
 from datetime import datetime
+import io
+import qrcode
 from typing import Dict, Any, List, Iterable, Optional
+import db
 
 from aiohttp import web
 import aiohttp_cors
@@ -52,10 +59,13 @@ API_HASH = os.getenv("TELEGRAM_API_HASH", "").strip()
 STATE_FILE = os.getenv("STATE_FILE", "./data/state.json")
 SESSIONS_DIR = os.getenv("SESSIONS_DIR", "./.sessions")
 BOT_SESSION = os.getenv("BOT_SESSION_NAME", "bot.session")
+AVATARS_DIR = os.getenv("AVATARS_DIR", "./frontend/avatars")
 
 MIN_DELAY = max(0, int(os.getenv("MIN_DELAY", "1")))
 MAX_DELAY = max(MIN_DELAY, int(os.getenv("MAX_DELAY", "15")))
 VERBOSE = os.getenv("VERBOSE", "0").lower() in {"1", "true", "yes"}
+
+ADMIN_IDS = set()
 
 DEFAULT_REPLY = (
     "Привет!\n\n"
@@ -93,33 +103,10 @@ log = logging.getLogger("motionbot")
 # ================== Состояние/Аудит ==================
 state_lock = asyncio.Lock()
 
-# Структура state.json для SaaS:
-# {
-#   "admin_ids": [123456],
-#   "allowed_phones": ["+77771234567"],
-#   "users": {
-#       "123456": {
-#           "phone": "+77771234567",
-#           "session_string": "1BJW...",
-#           "enabled": true,
-#           "tap": false,
-#           "reply_text": "...",
-#           "keywords": [...],
-#           "negative_words": [...],
-#           "channels": [...],
-#           "media_files": [...],
-#           "mailing_list": [...],
-#           "daily_stats": {"date": "2026-02-23", "sent": 0},
-#           "mail_limit": 50
-#       }
-#   }
-# }
-
-STATE_DEFAULT: Dict[str, Any] = {
-    "admin_ids": [],
-    "allowed_phones": [],
-    "users": {}
-}
+# --- Глобальный стейт ---
+STATE_FILE = "./data/state.json"
+STATE_LOCK_FILE = "./data/state.lock"
+state_lock = asyncio.Lock()
 
 AUDIT_FILE = "./data/audit.jsonl"
 STATE_CACHE: Optional[Dict[str, Any]] = None
@@ -128,35 +115,6 @@ def ensure_dirs():
     pathlib.Path(SESSIONS_DIR).mkdir(parents=True, exist_ok=True)
     pathlib.Path(os.path.dirname(STATE_FILE) or ".").mkdir(parents=True, exist_ok=True)
     pathlib.Path(os.path.dirname(AUDIT_FILE) or ".").mkdir(parents=True, exist_ok=True)
-
-def load_state() -> Dict[str, Any]:
-    global STATE_CACHE
-    if STATE_CACHE is not None:
-        return STATE_CACHE
-    ensure_dirs()
-    if not os.path.exists(STATE_FILE):
-        STATE_CACHE = dict(STATE_DEFAULT)
-        return STATE_CACHE
-    try:
-        with open(STATE_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        for k, v in STATE_DEFAULT.items():
-            data.setdefault(k, v)
-        STATE_CACHE = data
-        return STATE_CACHE
-    except Exception as e:
-        log.warning(f"state load failed: {e}")
-        STATE_CACHE = dict(STATE_DEFAULT)
-        return STATE_CACHE
-
-async def save_state(st: Dict[str, Any]):
-    global STATE_CACHE
-    ensure_dirs()
-    STATE_CACHE = dict(st)
-    tmp = STATE_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(st, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, STATE_FILE)
 
 def preview(s: str, n=160):
     s = (s or "").replace("\n", " ")
@@ -202,6 +160,9 @@ user_clients: Dict[str, TelegramClient] = {}
 # FSM для логина: user_id -> { "phone": str, "client": TelegramClient, "phone_code_hash": str }
 auth_sessions: Dict[int, Dict[str, Any]] = {}
 
+# Активные процессы массовой рассылки для предотвращения дублей
+active_mailings = set()
+
 if OPENAI_ENABLED:
     try:
         openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -237,6 +198,7 @@ async def openai_gate(text: str) -> bool:
         return False
 
 async def ensure_join(client: TelegramClient, link_or_at: str) -> Optional[int]:
+    # ... (existing code omitted for brevity in thought, but I will include it properly in the chunk)
     try:
         link = link_or_at.strip()
         if link.startswith("@"):
@@ -273,12 +235,42 @@ async def ensure_join(client: TelegramClient, link_or_at: str) -> Optional[int]:
         log.warning(f"Join failed for {link_or_at}: {e}")
         return None
 
+async def download_user_avatar(uid_str: str) -> Optional[str]:
+    """Скачивает аватар пользователя и возвращает путь к нему"""
+    avatar_path = os.path.join(AVATARS_DIR, f"{uid_str}.jpg")
+    
+    # Кэш на 1 час
+    if os.path.exists(avatar_path):
+        mtime = os.path.getmtime(avatar_path)
+        if datetime.now().timestamp() - mtime < 3600:
+            return f"/avatars/{uid_str}.jpg"
+            
+    # Приоритет 1: Юзербот
+    client = user_clients.get(uid_str)
+    if client:
+        try:
+            path = await client.download_profile_photo("me", file=avatar_path)
+            if path:
+                log.info(f"Downloaded avatar via user client for {uid_str}")
+                return f"/avatars/{uid_str}.jpg"
+        except: pass
+
+    # Приоритет 2: Бот-клиент
+    try:
+        path = await bot_client.download_profile_photo(int(uid_str), file=avatar_path)
+        if path:
+            log.info(f"Downloaded avatar via BOT client for {uid_str}")
+            return f"/avatars/{uid_str}.jpg"
+    except Exception as e:
+        log.warning(f"Failed to download avatar via bot client for {uid_str}: {e}")
+        
+    return None
+
 # ================== Юзербот Ватчер ==================
 # Эта функция создает обработчик конкретно для данного пользователя (uid)
 def make_watcher_handler(uid_str: str):
     async def watcher(event):
-        st = load_state()
-        u_data = st.get("users", {}).get(uid_str)
+        u_data = await db.get_user(uid_str)
         if not u_data or not u_data.get("enabled"):
             return
 
@@ -335,7 +327,9 @@ def make_watcher_handler(uid_str: str):
             await asyncio.sleep(delay)
             try:
                 reply_text = str(u_data.get("reply_text") or DEFAULT_REPLY)
-                media_files = list((u_data.get("media_files") or [])[:3])
+                # Media files aren't in DB yet, will implement later if needed or skip for now
+                # media_files = list((u_data.get("media_files") or [])[:3])
+                media_files = []
                 if media_files:
                     first, rest = media_files[0], media_files[1:]
                     await client.send_file(target, first, caption=reply_text)
@@ -350,28 +344,32 @@ def make_watcher_handler(uid_str: str):
                 
                 # Сохраняем статистику и добавляем в базу рассылки
                 today_str = datetime.now().strftime("%Y-%m-%d")
-                async with state_lock:
-                    st = load_state() # обновляем перед записью
-                    ud = st["users"].setdefault(uid_str, {})
-                    stats = ud.setdefault("daily_stats", {"date": today_str, "sent": 0})
-                    if stats["date"] != today_str:
-                        stats["date"] = today_str
-                        stats["sent"] = 0
-                    stats["sent"] += 1
+                
+                # Fetch fresh data for update
+                current_u_data = await db.get_user(uid_str)
+                if current_u_data:
+                    current_daily_date = current_u_data.get("daily_date")
+                    current_daily_sent = current_u_data.get("daily_sent", 0)
                     
-                    ml = ud.setdefault("mailing_list", [])
-                    if target not in ml:
-                        ml.append(target)
-                    await save_state(st)
+                    if current_daily_date != today_str:
+                        await db.update_user_field(uid_str, "daily_date", today_str)
+                        await db.update_user_field(uid_str, "daily_sent", 1)
+                    else:
+                        await db.update_user_field(uid_str, "daily_sent", current_daily_sent + 1)
+                
+                await db.add_crm_contacts(uid_str, [target])
                 
                 # Уведомляем админов и самого пользователя
                 who = target if isinstance(target, str) else f"id:{target}"
                 notify_txt = f"✅ Отклик отправлен {who} от имени {u_data.get('phone')} (чат: {chat_title})"
-                try: asyncio.create_task(bot_client.send_message(int(uid_str), notify_txt))
-                except: pass
-                for ad_id in st.get("admin_ids", []):
-                    try: asyncio.create_task(bot_client.send_message(ad_id, f"[SaaS] {notify_txt}"))
+                
+                async def safe_b_send(tid, txt):
+                    try: await bot_client.send_message(tid, txt)
                     except: pass
+                
+                asyncio.create_task(safe_b_send(int(uid_str), notify_txt))
+                for ad_id in ADMIN_IDS:
+                    asyncio.create_task(safe_b_send(ad_id, f"[SaaS] {notify_txt}"))
                     
             except FloodWaitError as e: send_error = f"FloodWait {e.seconds}s"
             except (UserPrivacyRestrictedError, UserIsBlockedError): send_error = "privacy/blocked"
@@ -405,8 +403,8 @@ def make_watcher_handler(uid_str: str):
     return watcher
 
 # ================== Команды Бота Управления ==================
-def is_admin(st: Dict[str, Any], user_id: int) -> bool:
-    return user_id in st.get("admin_ids", [])
+def is_admin(user_id: int) -> bool:
+    return user_id in ADMIN_IDS
 
 AWAITING_PASSWORD = set()
 ADMIN_PASSWORD = "Maidan is a brilliant and great man of the 21st century"
@@ -415,16 +413,16 @@ ADMIN_PASSWORD = "Maidan is a brilliant and great man of the 21st century"
 @bot_client.on(events.NewMessage(pattern=r"^/start$"))
 async def cmd_start(event):
     uid_str = str(event.sender_id)
-    st = load_state()
     
     # Для админа
-    if is_admin(st, event.sender_id):
+    if is_admin(event.sender_id):
         return await event.respond(
             "Привет, Администратор!\n/admin_help - список админских команд SaaS\n"
         )
     
     # Для зарегистрированного пользователя
-    if uid_str in st.get("users", {}):
+    user_data = await db.get_user(uid_str)
+    if user_data:
         return await event.respond(
             "Привет! Твой юзербот запущен.\n/help - список команд настройки твоего откликера."
         )
@@ -432,37 +430,36 @@ async def cmd_start(event):
     # Для новенького
     from telethon import types
     await event.respond(
-        "Приветствую в системе MotionHunter!\n\nЕсли ты клиент, пожалуйста, поделись своим контактом для авторизации.",
-        buttons=[[types.KeyboardButtonRequestPhone("📱 Отправить контакт")]]
+        "Приветствую в системе MotionHunter!\n\nДля авторизации твоего юзербота, нажми кнопку ниже.",
+        buttons=[[types.KeyboardButton("🔐 Войти по QR-коду")]]
     )
 
 # --- Админка ---
 @bot_client.on(events.NewMessage(pattern=r"^/admin$"))
 async def cmd_admin(event):
-    if is_admin(load_state(), event.sender_id):
+    if is_admin(event.sender_id):
         return await event.respond("Ты уже админ ✅")
     AWAITING_PASSWORD.add(event.sender_id)
     await event.respond("Введи пароль:")
 
 @bot_client.on(events.NewMessage(pattern=r"^/add_user\s+\+(\d+)$"))
 async def cmd_add_user(event):
-    st = load_state()
-    if not is_admin(st, event.sender_id): return
+    if not is_admin(event.sender_id): return
     phone = f"+{event.pattern_match.group(1)}"
-    async with state_lock:
-        if phone not in st["allowed_phones"]:
-            st["allowed_phones"].append(phone)
-            await save_state(st)
+    await db.add_allowed_phone(phone)
     await event.respond(f"✅ Добавлен в доступ: {phone}")
 
 @bot_client.on(events.NewMessage(pattern=r"^/list_users$"))
 async def cmd_list_users(event):
-    st = load_state()
-    if not is_admin(st, event.sender_id): return
-    txt = "📋 Разрешенные номера:\n" + "\n".join(st["allowed_phones"]) + "\n\n"
+    if not is_admin(event.sender_id): return
+    allowed = await db.get_allowed_phones()
+    txt = "📋 Разрешенные номера:\n" + "\n".join(allowed) + "\n\n"
     txt += "👥 Активные юзеры:\n"
-    for uid, udata in st["users"].items():
-        txt += f"UID: {uid} | Phone: {udata.get('phone')} | ON: {udata.get('enabled')}\n"
+    uids = await db.get_all_uids()
+    for uid in uids:
+        udata = await db.get_user(uid)
+        if udata:
+            txt += f"UID: {uid} | Phone: {udata.get('phone')} | ON: {udata.get('enabled')}\n"
     await event.respond(txt)
 
 HARDCODED_ADMIN_PHONES = {
@@ -475,7 +472,6 @@ HARDCODED_ADMIN_PHONES = {
 async def fsm_handler(event):
     sender_id = event.sender_id
     text = event.raw_text.strip()
-    st = load_state()
 
     # Пароль админа
     if sender_id in AWAITING_PASSWORD:
@@ -483,37 +479,21 @@ async def fsm_handler(event):
         except: pass
         AWAITING_PASSWORD.remove(sender_id)
         if text == ADMIN_PASSWORD:
-            async with state_lock:
-                if sender_id not in st.get("admin_ids", []):
-                    st["admin_ids"].append(sender_id)
-                    await save_state(st)
+            await db.add_admin(sender_id)
+            global ADMIN_IDS
+            ADMIN_IDS.add(sender_id)
             await event.respond("Пароль верный! 🎉 Ты теперь админ.")
         else:
             await event.respond("Неверный пароль 🚫.")
         return
 
-    # Получение контакта
-    if event.message.contact:
-        phone = event.message.contact.phone_number
-        if not phone.startswith("+"): phone = "+" + phone
-        
-        if phone not in st.get("allowed_phones", []) and phone not in HARDCODED_ADMIN_PHONES:
-            return await event.respond("Твой номер не разрешен администратором.")
+    # Запрос QR-кода
+    if text == "🔐 Войти по QR-коду":
+        user_data = await db.get_user(str(sender_id))
+        if user_data:
+            return await event.respond("Твой аккаунт уже авторизован. Введи /help")
 
-        if str(sender_id) in st.get("users", {}):
-            return await event.respond("Твой аккаунт уже авторизован.")
-
-        # Если номер это хардкод админ, то автоматичеки делаем его админом (если еще не был)
-        if phone in HARDCODED_ADMIN_PHONES:
-            async with state_lock:
-                admin_ids = st.get("admin_ids", [])
-                if sender_id not in admin_ids:
-                    admin_ids.append(sender_id)
-                    st["admin_ids"] = admin_ids
-                    await save_state(st)
-            await event.respond("Узнал тебя, Создатель! Права администратора выданы 👑")
-
-        await event.respond("Отлично. Запускаю сессию... Отправляю код в Telegram.")
+        await event.respond("Генерирую QR-код для входа...")
         temp_session_path = str(pathlib.Path(SESSIONS_DIR) / f"{sender_id}_login")
         
         # Полностью удаляем старую временную сессию перед новым запросом
@@ -534,57 +514,100 @@ async def fsm_handler(event):
             system_lang_code="en"
         )
         await client.connect()
+        
         try:
-            sent = await client.send_code_request(phone)
-            auth_sessions[sender_id] = {
-                "phone": phone,
-                "client": client,
-                "phone_code_hash": sent.phone_code_hash
-            }
-            await event.respond("Введите код из Telegram, добавив `F-` в начале (например, `F-12345`):")
-        except Exception as e:
-            await event.respond(f"Ошибка запроса кода: {e}")
-        return
-
-    # Ввод кода для авторизации
-    if sender_id in auth_sessions and "step_2fa" not in auth_sessions[sender_id]:
-        clean_text = text.strip()
-        if clean_text.upper().startswith('F-'):
-            clean_text = clean_text[2:]
-        elif clean_text.upper().startswith('F'):
-            clean_text = clean_text[1:]
+            qr = await client.qr_login()
             
-        clean_text = clean_text.replace("-", "").replace(" ", "").strip()
-        if clean_text.isdigit() and len(clean_text) == 5:
-            auth = auth_sessions[sender_id]
-            client = auth["client"]
-            try:
-                await client.sign_in(auth["phone"], clean_text, phone_code_hash=auth["phone_code_hash"])
-                await finalize_login(sender_id, st)
-            except SessionPasswordNeededError:
-                auth["step_2fa"] = True
-                await event.respond("Требуется пароль 2FA! Введите его:")
-            except Exception as e:
-                await event.respond(f"Ошибка входа: {e}")
-                del auth_sessions[sender_id]
-            return
+            # Генерируем изображение
+            img = qrcode.make(qr.url)
+            img_byte_arr = io.BytesIO()
+            img.save(img_byte_arr, format='PNG')
+            img_byte_arr.name = 'qr_login.png'
+            img_byte_arr.seek(0)
+            
+            msg = await event.respond(
+                "Отсканируй этот QR-код камерой с телефона:\n"
+                "1. Открой Telegram (на телефоне)\n"
+                "2. Настройки ➡️ Устройства ➡️ Подключить устройство\n"
+                "3. Наведи камеру на этот код.\n\n"
+                "*(QR-код действителен 30 секунд)*",
+                file=img_byte_arr
+            )
+            
+            auth_sessions[sender_id] = {"client": client, "qr_msg": msg, "step_2fa": False}
+            
+            # Ждём сканирования параллельно, чтобы не блокировать бота
+            asyncio.create_task(wait_for_qr_scan(sender_id, qr, st))
+            
+        except Exception as e:
+            log.error(f"Ошибка генерации QR-кода: {e}")
+            await event.respond(f"Ошибка запроса QR: {e}")
+            await client.disconnect()
+        return
 
     # Ввод 2FA пароля
     if sender_id in auth_sessions and auth_sessions[sender_id].get("step_2fa"):
         auth = auth_sessions[sender_id]
         client = auth["client"]
         try:
-            await event.delete()
+            await event.delete() # Удаляем пароль из чата
         except: pass
         try:
             await client.sign_in(password=text)
-            await finalize_login(sender_id, st)
+            me = await client.get_me()
+            auth["phone"] = f"+{me.phone}" if getattr(me, "phone", None) else str(me.id)
+            await finalize_login(sender_id)
         except Exception as e:
             await event.respond(f"Ошибка 2FA: {e}")
             del auth_sessions[sender_id]
+            await client.disconnect()
         return
 
-async def finalize_login(user_id: int, st: Dict[str, Any]):
+async def wait_for_qr_scan(sender_id: int, qr, st: Dict[str, Any]):
+    auth = auth_sessions.get(sender_id)
+    if not auth: return
+    client = auth["client"]
+    try:
+        # Ожидаем пока пользователь отсканирует QR (или таймаут ~30 секунд)
+        # Если wait() возвращает None, значит вход 100% успешен или нужен 2FA
+        await qr.wait(60) # чуть с запасом
+        
+        # Проверяем успешность
+        if await client.is_user_authorized():
+            me = await client.get_me()
+            phone = f"+{me.phone}" if getattr(me, "phone", None) else str(me.id)
+            auth["phone"] = phone
+            try: await auth["qr_msg"].delete()
+            except: pass
+            
+            # Если это один из админских номеров - дадим админку
+            if phone in HARDCODED_ADMIN_PHONES:
+                if sender_id not in ADMIN_IDS:
+                    await db.add_admin(sender_id)
+                    ADMIN_IDS.add(sender_id)
+                await bot_client.send_message(sender_id, "Узнал тебя, Создатель! Права администратора выданы 👑")
+                
+            await finalize_login(sender_id)
+            return
+            
+    except SessionPasswordNeededError:
+        try: await auth["qr_msg"].delete()
+        except: pass
+        auth["step_2fa"] = True
+        await bot_client.send_message(sender_id, "Код отсканирован! Но требуется пароль двухфакторной аутентификации (2FA). Введите его:")
+        return
+    except Exception as e:
+        log.error(f"Ошибка QR login для {sender_id}: {e}")
+        try: await auth["qr_msg"].delete()
+        except: pass
+        await bot_client.send_message(sender_id, "Время действия QR-кода истекло или произошла ошибка. Запросите новый код.")
+    
+    # Ресурсная очистка при неудаче
+    if sender_id in auth_sessions:
+        del auth_sessions[sender_id]
+    await client.disconnect()
+
+async def finalize_login(user_id: int):
     auth = auth_sessions[user_id]
     client = auth["client"]
     session_str = client.session.save()
@@ -599,23 +622,18 @@ async def finalize_login(user_id: int, st: Dict[str, Any]):
     except Exception as e:
         log.warning(f"Failed to remove temp session: {e}")
     
-    async with state_lock:
-        if "users" not in st: st["users"] = {}
-        st["users"][uid_str] = {
-            "phone": auth["phone"],
-            "session_string": session_str,
-            "enabled": False,
-            "tap": False,
-            "reply_text": DEFAULT_REPLY,
-            "keywords": DEFAULT_KEYWORDS.copy(),
-            "negative_words": DEFAULT_NEGATIVE_WORDS.copy(),
-            "channels": [],
-            "media_files": [],
-            "mailing_list": [],
-            "daily_stats": {"date": datetime.now().strftime("%Y-%m-%d"), "sent": 0},
-            "mail_limit": 50
-        }
-        await save_state(st)
+    user_db_data = {
+        "phone": auth["phone"],
+        "session_string": session_str,
+        "enabled": False,
+        "reply_text": DEFAULT_REPLY,
+        "keywords": DEFAULT_KEYWORDS.copy(),
+        "negative_words": DEFAULT_NEGATIVE_WORDS.copy(),
+        "daily_sent": 0,
+        "daily_date": datetime.now().strftime("%Y-%m-%d"),
+        "mail_limit": 50
+    }
+    await db.upsert_user(uid_str, user_db_data)
     
     await bot_client.send_message(user_id, "Успешная авторизация! 🎉\nВведи /help для настройки.")
     del auth_sessions[user_id]
@@ -640,8 +658,8 @@ async def finalize_login(user_id: int, st: Dict[str, Any]):
 @bot_client.on(events.NewMessage(pattern=r"^/help$"))
 async def cmd_user_help(event):
     uid_str = str(event.sender_id)
-    st = load_state()
-    if uid_str not in st.get("users", {}): return
+    user_data = await db.get_user(uid_str)
+    if not user_data: return
     txt = (
         "Команды твоего юзербота:\n"
         "/on — включить рассылку откликов\n"
@@ -665,49 +683,44 @@ async def cmd_user_help(event):
 @bot_client.on(events.NewMessage(pattern=r"^/on$|^/off$"))
 async def cmd_user_toggle(event):
     uid_str = str(event.sender_id)
-    st = load_state()
-    if uid_str not in st.get("users", {}): return
+    user_data = await db.get_user(uid_str)
+    if not user_data: return
     enable = event.pattern_match.group(0) == "/on"
-    async with state_lock:
-        st["users"][uid_str]["enabled"] = enable
-        await save_state(st)
+    await db.update_user_field(uid_str, "enabled", enable)
     await event.respond(f"Рассылка {'ВКЛЮЧЕНА ✅' if enable else 'ВЫКЛЮЧЕНА ⏸️'}")
 
 @bot_client.on(events.NewMessage(pattern=r"^/set_reply\s+([\s\S]+)$"))
 async def cmd_user_set_reply(event):
     uid_str = str(event.sender_id)
-    st = load_state()
-    if uid_str not in st.get("users", {}): return
+    user_data = await db.get_user(uid_str)
+    if not user_data: return
     txt = event.pattern_match.group(1)
-    async with state_lock:
-        st["users"][uid_str]["reply_text"] = txt
-        await save_state(st)
+    await db.update_user_field(uid_str, "reply_text", txt)
     await event.respond("Ваш шаблон отклика сохранен ✅")
 
 @bot_client.on(events.NewMessage(pattern=r"^/get_reply$"))
 async def cmd_user_get_reply(event):
     uid_str = str(event.sender_id)
-    st = load_state()
-    if uid_str not in st.get("users", {}): return
-    await event.respond(f"Твой шаблон:\n\n{st['users'][uid_str].get('reply_text')}")
+    user_data = await db.get_user(uid_str)
+    if not user_data: return
+    await event.respond(f"Твой шаблон:\n\n{user_data.get('reply_text')}")
 
 @bot_client.on(events.NewMessage(pattern=r"^/add_kw\s+([\s\S]+)$"))
 async def cmd_user_add_kw(event):
     uid_str = str(event.sender_id)
-    st = load_state()
-    if uid_str not in st.get("users", {}): return
+    user_data = await db.get_user(uid_str)
+    if not user_data: return
     terms = _parse_terms(event.pattern_match.group(1))
-    async with state_lock:
-        cur = _dedup_keep_order(list(st["users"][uid_str].get("keywords", [])) + terms)
-        st["users"][uid_str]["keywords"] = cur
-        await save_state(st)
-    await event.respond(f"Ключи добавлены. Всего: {len(cur)}")
+    cur_kws = list(user_data.get("keywords", []))
+    new_kws = _dedup_keep_order(cur_kws + terms)
+    await db.update_user_field(uid_str, "keywords", new_kws)
+    await event.respond(f"Ключи добавлены. Всего: {len(new_kws)}")
 
 @bot_client.on(events.NewMessage(pattern=r"^/add_channel\s+(.+)$"))
 async def cmd_user_add_channel(event):
     uid_str = str(event.sender_id)
-    st = load_state()
-    if uid_str not in st.get("users", {}): return
+    user_data = await db.get_user(uid_str)
+    if not user_data: return
     
     link = event.pattern_match.group(1).strip()
     client = user_clients.get(uid_str)
@@ -717,60 +730,59 @@ async def cmd_user_add_channel(event):
     await event.respond(f"Добавляю: {link}\nПодписываюсь...")
     cid = await ensure_join(client, link)
     if cid:
-        async with state_lock:
-            cur_ch = st["users"][uid_str].get("channels", [])
-            if link not in cur_ch:
-                cur_ch.append(link)
-            st["users"][uid_str]["channels"] = cur_ch
-            await save_state(st)
+        await db.add_channel(uid_str, link)
         await event.respond("Готово! Канал добавлен и юзербот на него подписался ✅")
     else:
         await event.respond("Не удалось подписаться на этот канал 🚫")
+
+@bot_client.on(events.NewMessage(pattern=r"^/list_channels$"))
+async def cmd_user_list_channels(event):
+    uid_str = str(event.sender_id)
+    user_data = await db.get_user(uid_str)
+    if not user_data: return
+    channels = await db.get_channels(uid_str)
+    if not channels:
+        return await event.respond("У вас нет добавленных каналов.")
+    await event.respond("📋 Ваши каналы:\n" + "\n".join(channels))
 
 # --- CRM и Рассылка ---
 @bot_client.on(events.NewMessage(pattern=r"^/add_mail\s+(.+)$"))
 async def cmd_user_add_mail(event):
     uid_str = str(event.sender_id)
-    st = load_state()
-    if uid_str not in st.get("users", {}): return
+    user_data = await db.get_user(uid_str)
+    if not user_data: return
     target = event.pattern_match.group(1).strip()
-    async with state_lock:
-        ml = st["users"][uid_str].setdefault("mailing_list", [])
-        if target not in ml:
-            ml.append(target)
-        await save_state(st)
-    await event.respond(f"✅ Добавлен в базу рассылки: {target}. Всего в базе: {len(ml)}")
+    await db.add_crm_contacts(uid_str, [target])
+    count = await db.get_crm_count(uid_str)
+    await event.respond(f"✅ Добавлен в базу рассылки: {target}. Всего в базе: {count}")
 
 @bot_client.on(events.NewMessage(pattern=r"^/list_mail$"))
 async def cmd_user_list_mail(event):
     uid_str = str(event.sender_id)
-    st = load_state()
-    if uid_str not in st.get("users", {}): return
-    ml = st["users"][uid_str].get("mailing_list", [])
-    limit = st["users"][uid_str].get("mail_limit", 50)
-    await event.respond(f"👥 В базе рассылки сейчас {len(ml)} человек(а).\n⚙️ Лимит отправки: {limit}")
+    user_data = await db.get_user(uid_str)
+    if not user_data: return
+    count = await db.get_crm_count(uid_str)
+    limit = user_data.get("mail_limit", 50)
+    await event.respond(f"👥 В базе рассылки сейчас {count} человек(а).\n⚙️ Лимит отправки: {limit}")
 
 @bot_client.on(events.NewMessage(pattern=r"^/set_mail_limit\s+(\d+)$"))
 async def cmd_user_set_mail_limit(event):
     uid_str = str(event.sender_id)
-    st = load_state()
-    if uid_str not in st.get("users", {}): return
+    user_data = await db.get_user(uid_str)
+    if not user_data: return
     limit = int(event.pattern_match.group(1))
-    async with state_lock:
-        st["users"][uid_str]["mail_limit"] = limit
-        await save_state(st)
+    await db.update_user_field(uid_str, "mail_limit", limit)
     await event.respond(f"✅ Лимит рассылки за один запуск установлен на: {limit}")
 
 @bot_client.on(events.NewMessage(pattern=r"^/run_mail\s+([\s\S]+)$"))
 async def cmd_user_run_mail(event):
     uid_str = str(event.sender_id)
-    st = load_state()
-    if uid_str not in st.get("users", {}): return
+    user_data = await db.get_user(uid_str)
+    if not user_data: return
     
     text = event.pattern_match.group(1)
-    udata = st["users"][uid_str]
-    ml = list(udata.get("mailing_list", []))
-    limit = int(udata.get("mail_limit", 50))
+    ml = await db.get_crm_contacts(uid_str)
+    limit = int(user_data.get("mail_limit", 50))
     limit = min(limit, len(ml))
     
     if limit == 0:
@@ -779,46 +791,44 @@ async def cmd_user_run_mail(event):
     client = user_clients.get(uid_str)
     if not client:
         return await event.respond("❌ Твой юзербот сейчас оффлайн.")
+
+    if uid_str in active_mailings:
+        return await event.respond("❌ У вас уже запущена рассылка! Дождитесь ее завершения.")
         
     targets_to_mail = ml[:limit]
     
     await event.respond(f"🚀 Запускаю рассылку для {limit} контактов из базы...\nПримерное время: ~{limit * 3} сек.")
     
-    sent_count = 0
-    err_count = 0
-    for tgt in targets_to_mail:
-        try:
-            await client.send_message(tgt, text)
-            sent_count += 1
-        except Exception as e:
-            err_count += 1
-            log.warning(f"Mail loop error for {tgt}: {e}")
-            
-        await asyncio.sleep(random.uniform(2, 5)) # Антибан задержка
+    active_mailings.add(uid_str)
+    try:
+        sent_count = 0
+        err_count = 0
+        for tgt in targets_to_mail:
+            try:
+                await client.send_message(tgt, text)
+                sent_count += 1
+                # Сдвигаем в конец очереди
+                await db.move_to_end(uid_str, tgt)
+            except Exception as e:
+                err_count += 1
+                log.warning(f"Mail loop error for {tgt}: {e}")
+                
+            await asyncio.sleep(random.uniform(2, 5)) # Антибан задержка
         
-    # Круговой сдвиг: отправленные контакты переносятся в конец списка
-    # Это позволяет рассылать всей базе порциями (например, по 50 чел в день)
-    async with state_lock:
-        st = load_state()
-        if uid_str in st.get("users", {}):
-            current_ml = st["users"][uid_str].get("mailing_list", [])
-            for t in targets_to_mail:
-                if t in current_ml:
-                    current_ml.remove(t)
-                current_ml.append(t)
-            st["users"][uid_str]["mailing_list"] = current_ml
-            await save_state(st)
-        
-    await event.respond(f"✅ Рассылка завершена!\nУспешно отправлено: {sent_count}\nОшибок: {err_count}\n\n*Отправленные контакты перенесены в конец очереди.*")
+        await event.respond(f"✅ Рассылка завершена!\nУспешно отправлено: {sent_count}\nОшибок: {err_count}\n\n*Отправленные контакты перенесены в конец очереди.*")
+    finally:
+        active_mailings.discard(uid_str)
 
 
 # ================== Старт Системы ==================
 async def start_all_clients():
-    st = load_state()
-    users = st.get("users", {})
-    log.info(f"Loaded {len(users)} users from state. Starting clients...")
+    uids = await db.get_all_uids()
+    log.info(f"Starting clients for {len(uids)} users from DB...")
     
-    for uid_str, data in users.items():
+    for uid_str in uids:
+        data = await db.get_user(uid_str)
+        if not data: continue
+        
         session_str = data.get("session_string")
         if session_str:
             client = TelegramClient(
@@ -838,6 +848,16 @@ async def start_all_clients():
                     continue
                 user_clients[uid_str] = client
                 client.add_event_handler(make_watcher_handler(uid_str), events.NewMessage())
+                
+                # Сохраняем имя пользователя
+                try:
+                    me = await client.get_me()
+                    name = me.first_name or ""
+                    if me.last_name: name += f" {me.last_name}"
+                    await db.update_user_field(uid_str, "name", name)
+                    await db.update_user_field(uid_str, "username", me.username)
+                except: pass
+                
                 log.info(f"Started client for UID {uid_str}")
             except Exception as e:
                 log.error(f"Failed to start client {uid_str}: {e}")
@@ -848,12 +868,12 @@ async def daily_report_task():
     while True:
         now = datetime.now()
         if now.hour == 21 and now.minute == 0:
-            st = load_state()
             today_str = now.strftime("%Y-%m-%d")
-            for uid_str, udata in st.get("users", {}).items():
-                stats = udata.get("daily_stats", {})
-                if stats.get("date") == today_str and stats.get("sent", 0) > 0:
-                    count = stats["sent"]
+            uids = await db.get_all_uids()
+            for uid_str in uids:
+                udata = await db.get_user(uid_str)
+                if udata and udata.get("daily_date") == today_str and udata.get("daily_sent", 0) > 0:
+                    count = udata["daily_sent"]
                     txt = f"🌃 Вечерний отчет!\n\nСегодня бот автоматически отправил откликов: {count} шт."
                     try:
                         await bot_client.send_message(int(uid_str), txt)
@@ -863,51 +883,444 @@ async def daily_report_task():
             await asyncio.sleep(30) # Проверяем каждые полминуты
 
 # ================== Web Server (Mini App) ==================
+def validate_webapp_data(init_data: str, bot_token: str) -> bool:
+    try:
+        if not init_data: return False
+        parsed_data = dict(parse_qsl(init_data))
+        if "hash" not in parsed_data: return False
+        hash_val = parsed_data.pop("hash")
+        
+        data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed_data.items()))
+        secret_key = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
+        calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+        
+        return calculated_hash == hash_val
+    except Exception:
+        return False
+
+async def get_auth_user_id(request) -> Optional[str]:
+    """Универсальный метод получения ID пользователя (MiniApp или Browser)"""
+    init_data = request.headers.get("X-Telegram-Init-Data", "")
+    web_token = request.headers.get("X-Web-Token", "")
+    
+    # 1. Сначала Mini App (приоритет)
+    if init_data and validate_webapp_data(init_data, BOT_TOKEN):
+        try:
+            parsed = dict(parse_qsl(init_data))
+            user_json = json.loads(parsed.get("user", "{}"))
+            return str(user_json.get("id"))
+        except: pass
+        
+    # 2. Браузер (по токену)
+    if web_token:
+        return await db.get_uid_by_token(web_token)
+        
+    return None
+
+# Хранилище сессий сканирования через WebApp
+webapp_qr_sessions = {}
+
 routes = web.RouteTableDef()
 
 @routes.get("/")
 async def handle_index(request):
     return web.FileResponse('./frontend/index.html')
 
+@routes.post("/api/qr_login")
+async def api_qr_login(request):
+    try:
+        data = await request.json()
+        sender_id = data.get("uid")
+        
+        # Если UID не передан, значит это "гость" из браузера
+        is_guest = False
+        if not sender_id:
+            is_guest = True
+            sender_id = random.randint(1000000, 9999999) # Временный ID для сессии QR
+        else:
+            sender_id = int(sender_id)
+
+        str_sender_id = str(sender_id)
+        
+        # Для не-гостей проверяем авторизацию Init-Data
+        if not is_guest:
+            init_data = request.headers.get("X-Telegram-Init-Data", "")
+            if not validate_webapp_data(init_data, BOT_TOKEN):
+                return web.json_response({"error": "Unauthorized"}, status=401)
+            
+            user_data = await db.get_user(str_sender_id)
+            if user_data:
+                return web.json_response({"error": "Already registered"})
+
+        # Уничтожаем старую сессию
+        temp_session_path = str(pathlib.Path(SESSIONS_DIR) / f"{sender_id}_login")
+        for ext in ["", ".session", ".session-journal"]:
+            try:
+                if os.path.exists(temp_session_path + ext):
+                    os.remove(temp_session_path + ext)
+            except: pass
+
+        client = TelegramClient(
+            temp_session_path, 
+            API_ID, 
+            API_HASH,
+            device_model="Desktop",
+            system_version="Windows 11",
+            app_version="4.6.1",
+            lang_code="en",
+            system_lang_code="en"
+        )
+        await client.connect()
+        qr = await client.qr_login()
+        
+        # Генерируем ID сессии авторизации
+        session_id = f"qr_{sender_id}_{int(datetime.now().timestamp())}"
+        webapp_qr_sessions[session_id] = {
+            "client": client,
+            "qr": qr,
+            "uid": sender_id,
+            "original_uid": sender_id,
+            "status": "pending",
+            "is_guest": is_guest
+        }
+        
+        # Фоновая задача ожидания
+        async def wait_worker(sid):
+            w_session = webapp_qr_sessions.get(sid)
+            if not w_session: return
+            cli = w_session["client"]
+            qr_obj = w_session["qr"]
+            try:
+                await qr_obj.wait(120) # ждем 2 минуты в WebApp
+                if await cli.is_user_authorized():
+                    me = await cli.get_me()
+                    phone = f"+{me.phone}" if getattr(me, "phone", None) else str(me.id)
+                    w_session["phone"] = phone
+                    w_session["uid"] = me.id # Реальный ID
+                    w_session["name"] = (me.first_name or "") + (" " + me.last_name if me.last_name else "")
+                    w_session["username"] = me.username
+                    w_session["status"] = "success"
+                else:
+                    w_session["status"] = "failed"
+            except SessionPasswordNeededError:
+                w_session["status"] = "2fa_required"
+            except Exception as e:
+                log.error(f"WA QR error: {e}")
+                w_session["status"] = "failed"
+                
+        asyncio.create_task(wait_worker(session_id))
+        
+        return web.json_response({"status": "ok", "url": qr.url, "session_id": session_id})
+    except Exception as e:
+        log.error(f"QR WebApp Generation Error: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+@routes.post("/api/qr_status")
+async def api_qr_status(request):
+    try:
+        data = await request.json()
+        session_id = data.get("session_id")
+        w_session = webapp_qr_sessions.get(session_id)
+        if not w_session:
+            return web.json_response({"error": "Session not found"}, status=404)
+            
+        status = w_session["status"]
+        if status == "success":
+            uid = w_session["uid"]
+            client = w_session["client"]
+            
+            # Подготовка как в finalize_login (эмуляция finalize_login)
+            session_str = client.session.save()
+            uid_str = str(uid)
+            await client.disconnect()
+            
+            # Если гость - создаем веб-токен
+            if w_session.get("is_guest"):
+                token = str(uuid.uuid4())
+                await db.set_web_token(token, uid_str)
+                w_session["web_token"] = token
+
+            try:
+                orig_uid = w_session.get("original_uid", uid)
+                temp_session_path = str(pathlib.Path(SESSIONS_DIR) / f"{orig_uid}_login")
+                for ext in [".session", ".session-journal"]:
+                    if os.path.exists(temp_session_path + ext):
+                        os.remove(temp_session_path + ext)
+            except: pass
+
+            user_db_data = {
+                "phone": w_session.get("phone", str(uid)),
+                "session_string": session_str,
+                "name": w_session.get("name"),
+                "username": w_session.get("username"),
+                "enabled": False,
+                "reply_text": DEFAULT_REPLY,
+                "keywords": DEFAULT_KEYWORDS.copy(),
+                "negative_words": DEFAULT_NEGATIVE_WORDS.copy(),
+                "daily_sent": 0,
+                "daily_date": datetime.now().strftime("%Y-%m-%d"),
+                "mail_limit": 50
+            }
+            await db.upsert_user(uid_str, user_db_data)
+            
+            # Если админ
+            if w_session.get("phone") in HARDCODED_ADMIN_PHONES:
+                if uid not in ADMIN_IDS:
+                    await db.add_admin(uid)
+                    ADMIN_IDS.add(uid)
+            
+            log.info(f"User {uid_str} fully registered via QR")
+            
+            try:
+                await bot_client.send_message(uid, "Успешная авторизация через WebApp! 🎉\nВведи /help для настройки.")
+            except: pass
+            
+            # Запускаем юзербота
+            new_client = TelegramClient(
+                StringSession(session_str), API_ID, API_HASH,
+                device_model="Desktop", system_version="Windows 11", app_version="4.6.1",
+                lang_code="en", system_lang_code="en"
+            )
+            await new_client.connect()
+            user_clients[uid_str] = new_client
+            new_client.add_event_handler(make_watcher_handler(uid_str), events.NewMessage())
+            
+            del webapp_qr_sessions[session_id]
+            
+            resp = {
+                "status": "success",
+                "uid": uid_str,
+                "name": w_session.get("name"),
+                "username": w_session.get("username")
+            }
+            if w_session.get("web_token"):
+                resp["web_token"] = w_session["web_token"]
+                
+            return web.json_response(resp)
+            
+        elif status == "failed":
+            client = w_session["client"]
+            await client.disconnect()
+            del webapp_qr_sessions[session_id]
+            return web.json_response({"status": "failed"})
+            
+        elif status == "2fa_required":
+            return web.json_response({"status": "2fa_required"})
+            
+        return web.json_response({"status": "pending"})
+        
+    except Exception as e:
+        log.error(f"QR WebApp Status Error: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+@routes.post("/api/2fa")
+async def api_2fa_login(request):
+    try:
+        data = await request.json()
+        session_id = data.get("session_id")
+        password = data.get("password")
+        
+        w_session = webapp_qr_sessions.get(session_id)
+        if not w_session:
+            return web.json_response({"error": "Session not found"}, status=404)
+            
+        client = w_session["client"]
+        try:
+            await client.sign_in(password=password)
+            me = await client.get_me()
+            phone = f"+{me.phone}" if getattr(me, "phone", None) else str(me.id)
+            w_session["phone"] = phone
+            w_session["status"] = "success"
+            return web.json_response({"status": "success"})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=400)
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
 @routes.get("/api/state")
 async def api_get_state(request):
-    uid_str = request.query.get("uid")
-    if not uid_str: return web.json_response({"error": "Missing UID"}, status=400)
-    st = load_state()
-    udata = st.get("users", {}).get(uid_str)
+    uid_str = await get_auth_user_id(request)
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    udata = await db.get_user(uid_str)
     if not udata: return web.json_response({"error": "User not registered"}, status=404)
-    return web.json_response(udata)
+    
+    # Попытаемся обновить аватарку в ответе
+    avatar_url = await download_user_avatar(uid_str)
+    resp = dict(udata)
+    resp["avatar_url"] = avatar_url
+    return web.json_response(resp)
 
 @routes.post("/api/update")
 async def api_update_state(request):
+    uid_str = await get_auth_user_id(request)
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
     try:
         data = await request.json()
-        uid_str = str(data.get("uid"))
-        st = load_state()
-        if uid_str not in st.get("users", {}): return web.json_response({"error": "Not registered"}, status=404)
+        user_data = await db.get_user(uid_str)
+        if not user_data: return web.json_response({"error": "Not registered"}, status=404)
         
-        async with state_lock:
-            st["users"][uid_str]["enabled"] = bool(data.get("enabled", False))
-            if "reply_text" in data: st["users"][uid_str]["reply_text"] = str(data["reply_text"])
-            if "keywords" in data: st["users"][uid_str]["keywords"] = _dedup_keep_order(data["keywords"])
-            if "mail_limit" in data: st["users"][uid_str]["mail_limit"] = int(data["mail_limit"])
-            await save_state(st)
+        if "enabled" in data:
+            await db.update_user_field(uid_str, "enabled", bool(data["enabled"]))
+        if "reply_text" in data:
+            await db.update_user_field(uid_str, "reply_text", str(data["reply_text"]))
+        if "keywords" in data:
+            await db.update_user_field(uid_str, "keywords", _dedup_keep_order(data["keywords"]))
+        if "mail_limit" in data:
+            await db.update_user_field(uid_str, "mail_limit", int(data["mail_limit"]))
+            
         return web.json_response({"status": "ok"})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+@routes.get("/crm")
+async def handle_crm(request):
+    return web.FileResponse('./frontend/crm.html')
+
+@routes.get("/profile")
+async def handle_profile(request):
+    return web.FileResponse('./frontend/profile.html')
+
+@routes.get("/api/profile")
+async def api_get_profile(request):
+    uid_str = await get_auth_user_id(request)
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    
+    udata = await db.get_user(uid_str)
+    if not udata: return web.json_response({"error": "User not registered"}, status=404)
+
+    name = udata.get("name")
+    username = udata.get("username")
+    
+    # Пытаемся получить данные
+    client = user_clients.get(uid_str)
+    if not name or name == "Пользователь":
+        updated = False
+        # Приоритет 1: Юзербот (дает макс данных)
+        if client:
+            try:
+                log.debug(f"Fetching name from client for {uid_str}...")
+                me = await client.get_me()
+                name = me.first_name or ""
+                if me.last_name: name += f" {me.last_name}"
+                username = me.username
+                updated = True
+            except Exception as e:
+                log.warning(f"Failed to fetch name from user client {uid_str}: {e}")
+        
+        # Приоритет 2: Бот-клиент (если юзербот спит)
+        if not updated:
+            try:
+                log.debug(f"Fetching data from BOT client for {uid_str}...")
+                user_entity = await bot_client.get_entity(int(uid_str))
+                name = user_entity.first_name or ""
+                if user_entity.last_name: name += f" {user_entity.last_name}"
+                username = user_entity.username
+                updated = True
+            except Exception as e:
+                log.warning(f"Failed to fetch name from bot client {uid_str}: {e}")
+
+        if updated:
+            await db.update_user_field(uid_str, "name", name)
+            await db.update_user_field(uid_str, "username", username)
+            log.info(f"Updated profile for {uid_str}: {name}")
+
+    crm_count = await db.get_crm_count(uid_str)
+    
+    profile_data = {
+        "uid": uid_str,
+        "name": name or "Пользователь",
+        "username": username,
+        "phone": udata.get("phone", "Unknown"),
+        "is_admin": int(uid_str) in ADMIN_IDS,
+        "daily_sent": udata.get("daily_sent", 0),
+        "total_crm": crm_count,
+        "avatar_url": await download_user_avatar(uid_str),
+        "version": "1.2.0"
+    }
+    return web.json_response(profile_data)
+
+@routes.get("/api/crm")
+async def api_crm_list(request):
+    uid_str = await get_auth_user_id(request)
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
+    udata = await db.get_user(uid_str)
+    if not udata: return web.json_response({"error": "User not registered"}, status=404)
+
+    q = request.query.get("q", "").strip()
+    ml = await db.get_crm_contacts(uid_str, query=q)
+    total = await db.get_crm_count(uid_str)
+    return web.json_response({"contacts": ml, "total": total})
+
+@routes.post("/api/crm/add")
+async def api_crm_add(request):
+    uid_str = await get_auth_user_id(request)
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    try:
+        data = await request.json()
+        contacts_to_add = []
+        
+        # Поддержка как одного контакта, так и списка
+        if "contacts" in data and isinstance(data["contacts"], list):
+            contacts_to_add = [str(c).strip() for c in data["contacts"] if str(c).strip()]
+        elif "contact" in data:
+            c = str(data["contact"]).strip()
+            if c: contacts_to_add = [c]
+
+        if not contacts_to_add:
+            return web.json_response({"error": "No contacts provided"}, status=400)
+
+        user_data = await db.get_user(uid_str)
+        if not user_data: return web.json_response({"error": "Not registered"}, status=404)
+        
+        await db.add_crm_contacts(uid_str, contacts_to_add)
+        total = await db.get_crm_count(uid_str)
+        
+        return web.json_response({"status": "ok", "total": total})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+@routes.post("/api/crm/delete")
+async def api_crm_delete(request):
+    uid_str = await get_auth_user_id(request)
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    try:
+        data = await request.json()
+        contact = data.get("contact")
+        if not contact:
+            return web.json_response({"error": "No contact provided"}, status=400)
+            
+        user_data = await db.get_user(uid_str)
+        if not user_data: return web.json_response({"error": "Not registered"}, status=404)
+
+        await db.delete_crm_contact(uid_str, contact)
+        total = await db.get_crm_count(uid_str)
+        return web.json_response({"status": "ok", "total": total})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
 @routes.post("/api/mail")
 async def api_run_mail(request):
+    uid_str = await get_auth_user_id(request)
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+
     try:
         data = await request.json()
-        uid_str = str(data.get("uid"))
         text = str(data.get("text"))
         
-        st = load_state()
-        if uid_str not in st.get("users", {}): return web.json_response({"error": "Not registered"}, status=404)
+        udata = await db.get_user(uid_str)
+        if not udata: return web.json_response({"error": "Not registered"}, status=404)
         
-        udata = st["users"][uid_str]
-        ml = list(udata.get("mailing_list", []))
+        ml = await db.get_crm_contacts(uid_str)
         limit = min(int(udata.get("mail_limit", 50)), len(ml))
         
         if limit == 0: return web.json_response({"error": "Base is empty or limit 0"}, status=400)
@@ -915,39 +1328,40 @@ async def api_run_mail(request):
         client = user_clients.get(uid_str)
         if not client: return web.json_response({"error": "User client offline"}, status=400)
             
+        if uid_str in active_mailings:
+            return web.json_response({"error": "Рассылка уже запущена! Дождитесь окончания."}, status=400)
+
         targets = ml[:limit]
-        sent_count, err_count = 0, 0
         
         async def background_mailer():
-            s, e = 0, 0
-            for tgt in targets:
+            active_mailings.add(uid_str)
+            try:
+                s, e = 0, 0
+                for tgt in targets:
+                    try:
+                        await client.send_message(tgt, text)
+                        s += 1
+                        await db.move_to_end(uid_str, tgt)
+                    except Exception:
+                        e += 1
+                    await asyncio.sleep(random.uniform(2, 5))
                 try:
-                    await client.send_message(tgt, text)
-                    s += 1
-                except: e += 1
-                await asyncio.sleep(random.uniform(2, 5))
-            
-            # Круговой сдвиг
-            async with state_lock:
-                st2 = load_state()
-                if uid_str in st2.get("users", {}):
-                    cml = st2["users"][uid_str].get("mailing_list", [])
-                    for tgt in targets:
-                        if tgt in cml: cml.remove(tgt)
-                        cml.append(tgt)
-                    st2["users"][uid_str]["mailing_list"] = cml
-                    await save_state(st2)
-            try: await bot_client.send_message(int(uid_str), f"✅ Рассылка из WebApp завершена!\nУспешно: {s}, Ошибок: {e}")
-            except: pass
-            
+                    await bot_client.send_message(int(uid_str), f"✅ Рассылка через Web App завершена!\nУспешно: {s}\nОшибок: {e}")
+                except: pass
+            finally:
+                active_mailings.discard(uid_str)
+        
         asyncio.create_task(background_mailer())
-        return web.json_response({"status": "started", "sent": "В фоне...", "errors": 0})
+        return web.json_response({"status": "ok", "message": f"Рассылка запущена для {limit} контактов"})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
-
 async def init_web_server():
     app = web.Application()
     app.add_routes(routes)
+    
+    # Раздача аватарок
+    if not os.path.exists(AVATARS_DIR): os.makedirs(AVATARS_DIR, exist_ok=True)
+    app.router.add_static('/avatars/', path=AVATARS_DIR, name='avatars')
     
     # Enable CORS
     cors = aiohttp_cors.setup(app, defaults={
@@ -978,14 +1392,29 @@ async def init_web_server():
         from telethon.tl.types import BotMenuButtonDefault, BotMenuButton, BotMenuButtonCommands
         # Для WebApp нужна специальная кнопка, но Telethon 1.x имеет ограничения,
         # поэтому мы просто напишем админам ссылку
+        async def safe_notify(ad_id, msg):
+            try:
+                await bot_client.send_message(ad_id, msg)
+            except Exception as e:
+                log.warning(f"Could not notify admin {ad_id}: {e}")
+
         for ad in load_state().get("admin_ids", []):
-            try: asyncio.create_task(bot_client.send_message(ad, f"🌐 Web App URL запущен:\n{public_url}"))
-            except: pass
+            asyncio.create_task(safe_notify(ad, f"🌐 Web App URL запущен:\n{public_url}"))
             
     except Exception as e:
         log.warning(f"Ngrok failed to start: {e}")
 
 async def main():
+    # 0. Инициализация БД
+    try:
+        await db.init_db()
+        # Загружаем админов в кэш
+        global ADMIN_IDS
+        ADMIN_IDS = set(await db.get_admins())
+    except Exception as e:
+        log.error(f"Failed to connect to MySQL: {e}")
+        return
+
     logging.getLogger("telethon").setLevel(logging.WARNING)
     log.info("Starting SaaS Control Bot...")
     await bot_client.start(bot_token=BOT_TOKEN)

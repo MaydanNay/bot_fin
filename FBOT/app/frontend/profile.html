@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>MotionHunter — Профиль</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <!-- QR Code Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+      :root {
+        --bg-color: var(--tg-theme-bg-color, #0f172a);
+        --text-color: var(--tg-theme-text-color, #f8fafc);
+        --hint-color: var(--tg-theme-hint-color, #94a3b8);
+        --button-color: var(--tg-theme-button-color, #38bdf8);
+        --button-text-color: var(--tg-theme-button-text-color, #ffffff);
+        --secondary-bg-color: var(--tg-theme-secondary-bg-color, #1e293b);
+        --card-bg: rgba(255, 255, 255, 0.03);
+        --border-color: rgba(255, 255, 255, 0.08);
+        --accent-gradient: linear-gradient(135deg, #38bdf8, #818cf8);
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        padding: 24px 16px 100px;
+        overscroll-behavior-y: none;
+        line-height: 1.5;
+      }
+
+      .header {
+        margin-bottom: 32px;
+        text-align: center;
+      }
+
+      .title {
+        font-size: 28px;
+        font-weight: 800;
+        background: var(--accent-gradient);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        letter-spacing: -0.5px;
+      }
+
+      .profile-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-radius: 24px;
+        padding: 32px 24px;
+        margin-bottom: 24px;
+        text-align: center;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      }
+
+      .avatar-wrap {
+        position: relative;
+        width: 100px;
+        height: 100px;
+        margin: 0 auto 20px;
+      }
+
+      .avatar-large {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        background: var(--accent-gradient);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 40px;
+        font-weight: 700;
+        color: white;
+        overflow: hidden;
+        border: 3px solid rgba(255,255,255,0.1);
+        box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+      }
+
+      .avatar-large img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .user-phone {
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--text-color);
+        margin-bottom: 4px;
+        opacity: 0.9;
+      }
+
+      .user-id {
+        font-size: 14px;
+        color: var(--hint-color);
+        font-family: 'Monaco', 'Consolas', monospace;
+      }
+
+      .user-name {
+        font-size: 22px;
+        font-weight: 800;
+        margin-bottom: 2px;
+        background: var(--accent-gradient);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        letter-spacing: -0.5px;
+      }
+
+      .user-username {
+        font-size: 14px;
+        color: var(--button-color);
+        font-weight: 600;
+        margin-bottom: 8px;
+        opacity: 0.8;
+      }
+
+      .badge-admin {
+        display: inline-block;
+        background: rgba(56, 189, 248, 0.1);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        color: var(--button-color);
+        font-size: 12px;
+        font-weight: 600;
+        padding: 6px 14px;
+        border-radius: 12px;
+        margin-top: 16px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 32px;
+      }
+
+      .stat-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        padding: 24px 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        transition: transform 0.2s;
+      }
+      .stat-card:active { transform: scale(0.98); }
+
+      .stat-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      }
+
+      .stat-value {
+        font-size: 28px;
+        font-weight: 800;
+        background: var(--accent-gradient);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        letter-spacing: -1px;
+        line-height: 1;
+        margin-bottom: 6px;
+      }
+
+      .stat-label {
+        font-size: 11px;
+        color: var(--hint-color);
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        font-weight: 700;
+        line-height: 1.2;
+      }
+
+      .section-title {
+        font-size: 14px;
+        font-weight: 700;
+        margin-bottom: 16px;
+        padding-left: 4px;
+        color: var(--hint-color);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      .menu-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .menu-item {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 16px 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .menu-item:active { 
+        background: rgba(255,255,255,0.06);
+        transform: translateX(4px);
+      }
+
+      .menu-icon { font-size: 20px; margin-right: 16px; }
+      .menu-text { flex: 1; font-size: 15px; font-weight: 600; }
+      .menu-arrow { 
+        color: var(--hint-color); 
+        opacity: 0.3; 
+        font-size: 18px;
+        transition: opacity 0.2s;
+      }
+      .menu-item:hover .menu-arrow { opacity: 0.8; }
+
+      /* Bottom Nav - Glassmorphism */
+      .bottom-nav {
+        position: fixed;
+        bottom: 20px; left: 16px; right: 16px;
+        background: rgba(30, 41, 59, 0.7);
+        backdrop-filter: blur(20px) saturate(180%);
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 24px;
+        display: flex;
+        justify-content: space-around;
+        padding: 12px 8px;
+        z-index: 100;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+      }
+
+      .nav-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        color: var(--hint-color);
+        text-decoration: none;
+        font-size: 11px;
+        font-weight: 600;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        flex: 1;
+        position: relative;
+      }
+
+      .nav-item.active { color: var(--button-color); }
+      .nav-icon { 
+        font-size: 24px; 
+        transition: transform 0.3s;
+      }
+      .nav-item.active .nav-icon {
+        transform: translateY(-4px);
+        filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.4));
+      }
+      .nav-item::after {
+        content: '';
+        position: absolute;
+        bottom: -4px;
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: var(--button-color);
+        opacity: 0;
+        transition: opacity 0.3s;
+      }
+      .nav-item.active::after { opacity: 1; }
+
+      #loading {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: var(--bg-color); z-index: 200;
+        display: flex; justify-content: center; align-items: center;
+        transition: opacity 0.4s;
+      }
+      .spinner {
+        width: 44px; height: 44px;
+        border: 3px solid rgba(56, 189, 248, 0.1);
+        border-top: 3px solid var(--button-color);
+        border-radius: 50%;
+        animation: spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      }
+      @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+      /* Auth Modal Styles */
+      #auth-backdrop {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        z-index: 300;
+        display: none;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+      }
+      #auth-screen {
+        background: var(--secondary-bg-color);
+        border: 1px solid var(--border-color);
+        border-radius: 24px;
+        padding: 32px 24px;
+        text-align: center;
+        width: 100%;
+        max-width: 360px;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        animation: modalIn 0.3s ease-out;
+      }
+      @keyframes modalIn {
+        from { transform: scale(0.9); opacity: 0; }
+        to   { transform: scale(1);    opacity: 1; }
+      }
+      #qrcode-container {
+        background: white;
+        padding: 16px;
+        border-radius: 16px;
+        margin: 20px auto;
+        width: fit-content;
+      }
+      #qrcode-container img {
+        display: block;
+      }
+      .instructions {
+        font-size: 14px;
+        color: var(--hint-color);
+        margin-top: 12px;
+        line-height: 1.4;
+      }
+      #password-input-container {
+        display: none;
+        margin-top: 20px;
+      }
+      .btn {
+        display: block;
+        width: 100%;
+        padding: 16px;
+        border-radius: 16px;
+        border: none;
+        background: var(--button-color);
+        color: var(--button-text-color);
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: transform 0.2s, background 0.2s;
+        margin-top: 16px;
+      }
+      .btn:active { transform: scale(0.98); }
+      .btn-outline {
+        background: transparent;
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+      }
+      input[type="password"] {
+        width: 100%;
+        padding: 14px;
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+        background: rgba(255,255,255,0.05);
+        color: white;
+        font-size: 16px;
+        margin-top: 8px;
+        outline: none;
+      }
+      input[type="password"]:focus {
+        border-color: var(--button-color);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loading"><div class="spinner"></div></div>
+
+    <div class="header">
+      <div class="title">Профиль</div>
+    </div>
+
+    <div class="profile-card">
+      <div class="avatar-wrap">
+        <div class="avatar-large" id="profile-avatar">?</div>
+      </div>
+      <div class="user-name" id="profile-name">Загрузка...</div>
+      <div class="user-username" id="profile-username"></div>
+      <div class="user-phone" id="profile-phone"></div>
+      <div class="user-id" id="profile-id"></div>
+      <div id="admin-badge-container"></div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-icon" style="background: rgba(56, 189, 248, 0.1); color: var(--button-color);">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+        </div>
+        <div class="stat-value" id="profile-sent">0</div>
+        <div class="stat-label">Отправлено<br>сегодня</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background: rgba(168, 85, 247, 0.1); color: #a855f7;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </div>
+        <div class="stat-value" id="profile-crm">0</div>
+        <div class="stat-label">База<br>CRM-контактов</div>
+      </div>
+    </div>
+
+    <div class="section-title">Настройки</div>
+    <div class="menu-list">
+      <div class="menu-item" onclick="tg.showAlert('Версия приложения: 1.2.0')">
+        <span class="menu-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--button-color)"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        </span>
+        <span class="menu-text">О приложении</span>
+        <span class="menu-arrow">→</span>
+      </div>
+      <div class="menu-item" onclick="window.location.reload()">
+        <span class="menu-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--button-color)"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+        </span>
+        <span class="menu-text">Обновить данные</span>
+        <span class="menu-arrow">→</span>
+      </div>
+      <div class="menu-item" onclick="showQRAuthScreen()" style="border-color: rgba(56, 189, 248, 0.3)">
+        <span class="menu-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--button-color)"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </span>
+        <span class="menu-text" style="color: var(--button-color)">Переподключить Telegram</span>
+        <span class="menu-arrow" style="color: var(--button-color); opacity: 0.6">→</span>
+      </div>
+    </div>
+
+    <!-- Auth Modal -->
+    <div id="auth-backdrop">
+      <div id="auth-screen">
+        <div class="title" style="font-size: 22px; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 10px;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--button-color)"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Авторизация
+        </div>
+        <div class="instructions" id="auth-instructions">Подготовка QR-кода...</div>
+        <div id="qrcode-container"></div>
+        
+        <div id="password-input-container" style="display: none;">
+          <label style="font-size: 14px; display: block; margin-bottom: 8px;">Введите 2FA пароль:</label>
+          <input type="password" id="2fa-password" placeholder="Ваш пароль" />
+          <button class="btn" onclick="submit2FA()">Подтвердить</button>
+        </div>
+
+        <button class="btn btn-outline" onclick="closeAuthModal()" style="margin-top: 20px">Отмена</button>
+      </div>
+    </div>
+
+    <div class="bottom-nav">
+      <a href="/" class="nav-item">
+        <span class="nav-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        </span>
+        <span>Главная</span>
+      </a>
+      <a href="/crm" class="nav-item">
+        <span class="nav-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </span>
+        <span>CRM</span>
+      </a>
+      <a href="/profile" class="nav-item active">
+        <span class="nav-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </span>
+        <span>Профиль</span>
+      </a>
+    </div>
+
+    <script>
+      const tg = window.Telegram.WebApp;
+      tg.expand();
+
+      const API_BASE = "";
+      let userId = localStorage.getItem("user_id");
+      let webToken = localStorage.getItem("web_token");
+      let initData = tg.initData || "";
+
+      function getAuthHeaders() {
+          const headers = { "Content-Type": "application/json" };
+          if (initData) headers["X-Telegram-Init-Data"] = initData;
+          if (webToken) headers["X-Web-Token"] = webToken;
+          return headers;
+      }
+
+      if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+        userId = tg.initDataUnsafe.user.id;
+      } else if (!userId || !webToken) {
+        // Если нет ни данных телеграма, ни токена - на главную логиниться
+        window.location.href = "/";
+      }
+
+      async function fetchProfile() {
+        try {
+          const res = await fetch(`${API_BASE}/api/profile?uid=${userId}`, {
+            headers: getAuthHeaders()
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            tg.showAlert(data.error || "Ошибка загрузки профиля");
+            return;
+          }
+
+          document.getElementById("profile-name").innerText = data.name || "Пользователь";
+          document.getElementById("profile-username").innerText = data.username ? "@" + data.username : "";
+          document.getElementById("profile-phone").innerText = data.phone;
+          document.getElementById("profile-id").innerText = "ID: " + data.uid;
+          document.getElementById("profile-sent").innerText = data.daily_sent;
+          document.getElementById("profile-crm").innerText = data.total_crm;
+          
+          const avatarEl = document.getElementById("profile-avatar");
+          if (data.avatar_url) {
+             avatarEl.innerHTML = `<img src="${data.avatar_url}?t=${Date.now()}" alt="Avatar">`;
+          } else {
+             const name = data.name || data.phone || "?";
+             avatarEl.innerText = name[0].toUpperCase();
+          }
+
+          if (data.is_admin) {
+            document.getElementById("admin-badge-container").innerHTML = '<div class="badge-admin">Администратор</div>';
+          }
+
+          setTimeout(() => {
+            const loader = document.getElementById("loading");
+            if (loader) {
+              loader.style.opacity = "0";
+              setTimeout(() => loader.style.display = "none", 400);
+            }
+          }, 500);
+        } catch (e) {
+          tg.showAlert("Ошибка связи с сервером");
+        }
+      }
+
+      async function showQRAuthScreen() {
+        tg.HapticFeedback.impactOccurred("medium");
+        document.getElementById("auth-backdrop").style.display = "flex";
+        document.getElementById("qrcode-container").innerHTML = "";
+        document.getElementById("auth-instructions").innerText = "Генерация...";
+        document.getElementById("password-input-container").style.display = "none";
+
+        try {
+          const res = await fetch(`${API_BASE}/api/qr_login`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ uid: userId }),
+          });
+          const data = await res.json();
+          if (data.error) {
+            tg.showAlert(data.error);
+            closeAuthModal();
+            return;
+          }
+          const qrContainer = document.getElementById("qrcode-container");
+          new QRCode(qrContainer, { text: data.url, width: 200, height: 200 });
+          document.getElementById("auth-instructions").innerHTML = "Отсканируйте код в<br><b>Устройства ➡️ Подключить</b>";
+          pollQRStatus(data.session_id);
+        } catch (e) {
+             document.getElementById("auth-instructions").innerText = "Ошибка загрузки QR";
+        }
+      }
+
+      let _currentSessionId = null;
+      let _pollInterval = null;
+
+      function pollQRStatus(id) {
+        _currentSessionId = id;
+        if (_pollInterval) clearInterval(_pollInterval);
+        
+        _pollInterval = setInterval(async () => {
+          try {
+            const res = await fetch(`${API_BASE}/api/qr_status`, {
+              method: "POST",
+              headers: getAuthHeaders(),
+              body: JSON.stringify({ session_id: id }),
+            });
+            const data = await res.json();
+            
+            if (data.status === "success") {
+              clearInterval(_pollInterval);
+              if (data.web_token) {
+                 localStorage.setItem("web_token", data.web_token);
+                 localStorage.setItem("user_id", data.uid);
+              }
+              tg.showAlert("Успешное подключение!");
+              location.reload();
+            } else if (data.status === "2fa_required") {
+              clearInterval(_pollInterval);
+              document.getElementById("qrcode-container").style.display = "none";
+              document.getElementById("auth-instructions").style.display = "block";
+              document.getElementById("auth-instructions").innerText = "Введите пароль 2FA:";
+              document.getElementById("password-input-container").style.display = "block";
+            } else if (data.status === "failed") {
+              clearInterval(_pollInterval);
+              tg.showAlert("Ошибка авторизации. Попробуйте снова.");
+              closeAuthModal();
+            }
+          } catch (e) { console.error("Poll error", e); }
+        }, 3000);
+      }
+
+      async function submit2FA() {
+        const password = document.getElementById("2fa-password").value;
+        if (!password) return;
+        try {
+          const res = await fetch(`${API_BASE}/api/2fa`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ session_id: _currentSessionId, password }),
+          });
+          const data = await res.json();
+          if (data.status === "success") {
+            if (data.web_token) {
+               localStorage.setItem("web_token", data.web_token);
+               localStorage.setItem("user_id", data.uid);
+            }
+            tg.showAlert("Успешно!");
+            location.reload();
+          } else {
+            tg.showAlert(data.error || "Неверный пароль");
+          }
+        } catch (e) { tg.showAlert("Ошибка 2FA"); }
+      }
+
+      function closeAuthModal() {
+        document.getElementById("auth-backdrop").style.display = "none";
+        if (_pollInterval) clearInterval(_pollInterval);
+      }
+
+      fetchProfile();
+    </script>
+  </body>
+</html>

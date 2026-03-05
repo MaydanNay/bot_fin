@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>MotionHunter — CRM</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg-color: var(--tg-theme-bg-color, #0f172a);
+        --text-color: var(--tg-theme-text-color, #f8fafc);
+        --hint-color: var(--tg-theme-hint-color, #94a3b8);
+        --button-color: var(--tg-theme-button-color, #38bdf8);
+        --button-text-color: var(--tg-theme-button-text-color, #ffffff);
+        --secondary-bg-color: var(--tg-theme-secondary-bg-color, #1e293b);
+        --card-bg: rgba(255, 255, 255, 0.03);
+        --border-color: rgba(255, 255, 255, 0.08);
+        --success-color: #10b981;
+        --danger-color: #ef4444;
+        --accent-gradient: linear-gradient(135deg, #38bdf8, #818cf8);
+      }
+
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+
+      body {
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        padding: 0;
+        overscroll-behavior-y: none;
+        min-height: 100vh;
+        line-height: 1.5;
+      }
+
+      /* Header */
+      .header {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 24px 16px 16px;
+        border-bottom: 1px solid var(--border-color);
+        position: sticky;
+        top: 0;
+        background: rgba(15, 23, 42, 0.8);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        z-index: 100;
+      }
+
+      .header-title {
+        font-size: 22px;
+        font-weight: 800;
+        background: var(--accent-gradient);
+        -webkit-background-clip: text;
+        background-clip: text;
+        -webkit-text-fill-color: transparent;
+        letter-spacing: -0.5px;
+      }
+
+      .header-count {
+        margin-left: auto;
+        background: rgba(56, 189, 248, 0.1);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        color: var(--button-color);
+        font-size: 13px;
+        font-weight: 700;
+        padding: 6px 14px;
+        border-radius: 12px;
+      }
+
+      /* Stats bar */
+      .stats-bar {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        padding: 20px 16px;
+      }
+
+      .stat-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        padding: 16px;
+        text-align: center;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+      }
+
+      .stat-val { font-size: 24px; font-weight: 800; color: var(--button-color); letter-spacing: -0.5px; }
+      .stat-label { font-size: 11px; color: var(--hint-color); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+
+      .add-section {
+        padding: 0 16px 20px;
+      }
+
+      .btn-add-trigger {
+        width: 100%;
+        background: var(--accent-gradient);
+        color: white;
+        border: none;
+        border-radius: 18px;
+        padding: 16px;
+        font-size: 15px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        cursor: pointer;
+        transition: all 0.2s;
+        box-shadow: 0 8px 20px rgba(56, 189, 248, 0.25);
+      }
+      .btn-add-trigger:active { transform: scale(0.97); opacity: 0.9; }
+
+      /* Modal */
+      .modal-backdrop {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.85);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        display: none; justify-content: center; align-items: flex-end;
+        z-index: 1000;
+        padding: 16px;
+      }
+
+      .modal-content {
+        background: #1e293b;
+        width: 100%;
+        max-width: 450px;
+        border-radius: 28px 28px 20px 20px;
+        padding: 24px;
+        border: 1px solid var(--border-color);
+        box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
+        animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+      .modal-header {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 20px;
+      }
+      .modal-title { font-size: 18px; font-weight: 800; color: var(--text-color); }
+      .modal-close { 
+        background: rgba(255,255,255,0.05); border: none; color: var(--hint-color);
+        width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      }
+
+      .modal-body textarea {
+        width: 100%;
+        min-height: 160px;
+        background: rgba(0,0,0,0.2);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 16px;
+        color: white;
+        font-family: inherit;
+        font-size: 14px;
+        line-height: 1.5;
+        resize: none;
+        outline: none;
+        margin-bottom: 16px;
+      }
+      .modal-body textarea:focus { border-color: var(--button-color); }
+
+      .modal-hint { color: var(--hint-color); font-size: 12px; margin-bottom: 20px; text-align: center; }
+
+      .btn-primary {
+        width: 100%;
+        background: var(--accent-gradient);
+        color: white;
+        border: none;
+        border-radius: 16px;
+        padding: 16px;
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .btn-primary:active { transform: scale(0.98); }
+      .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+      /* Search */
+      .search-wrap {
+        padding: 0 16px 20px;
+        position: relative;
+      }
+
+      .search-wrap input {
+        width: 100%;
+        background: rgba(255,255,255,0.03);
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+        border-radius: 16px;
+        padding: 14px 14px 14px 44px;
+        font-family: inherit;
+        font-size: 14px;
+        outline: none;
+        transition: all 0.2s;
+      }
+      .search-wrap input:focus { border-color: var(--button-color); }
+
+      .search-icon {
+        position: absolute;
+        left: 32px; top: 14px;
+        color: var(--hint-color);
+        font-size: 16px;
+        pointer-events: none;
+      }
+
+      /* Contact list */
+      .contacts-list {
+        padding: 0 16px 120px;
+      }
+
+      .contact-item {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 16px;
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        margin-bottom: 10px;
+        transition: all 0.2s;
+        animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .contact-item:active { transform: scale(0.98); background: rgba(255,255,255,0.05); }
+
+      @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+      .contact-avatar {
+        width: 44px; height: 44px;
+        border-radius: 14px;
+        background: var(--accent-gradient);
+        display: flex; align-items: center; justify-content: center;
+        font-weight: 800; font-size: 18px; color: white;
+        flex-shrink: 0;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+      }
+
+      .contact-name {
+        flex: 1;
+        font-size: 15px;
+        font-weight: 700;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        margin-bottom: 2px;
+      }
+
+      .contact-type {
+        font-size: 12px;
+        color: var(--hint-color);
+        font-weight: 500;
+      }
+
+      .delete-btn {
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--danger-color);
+        border: 1px solid rgba(239, 68, 68, 0.1);
+        border-radius: 12px;
+        width: 40px; height: 40px;
+        font-size: 18px;
+        cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0;
+        transition: all 0.2s;
+      }
+      .delete-btn:active { background: var(--danger-color); color: white; }
+
+      /* Empty state */
+      .empty-state {
+        text-align: center;
+        padding: 80px 32px;
+      }
+      .empty-icon { font-size: 56px; margin-bottom: 20px; filter: grayscale(1); opacity: 0.5; }
+      .empty-title { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+      .empty-text { font-size: 13px; color: var(--hint-color); line-height: 1.6; }
+
+      /* Loading */
+      #loading {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: var(--bg-color); z-index: 1000;
+        display: flex; justify-content: center; align-items: center;
+      }
+      .spinner {
+        width: 44px; height: 44px;
+        border: 3px solid rgba(56, 189, 248, 0.1);
+        border-top: 3px solid var(--button-color);
+        border-radius: 50%;
+        animation: spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      }
+      @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+      /* Toast */
+      #toast {
+        position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%) translateY(20px);
+        background: rgba(30, 41, 59, 0.95);
+        backdrop-filter: blur(10px);
+        border: 1px solid var(--border-color);
+        color: var(--text-color); padding: 12px 24px; border-radius: 100px;
+        font-size: 14px; font-weight: 600; opacity: 0; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        z-index: 500; white-space: nowrap;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+      }
+      #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+      /* Bottom Nav - Glassmorphism */
+      .bottom-nav {
+        position: fixed;
+        bottom: 20px; left: 16px; right: 16px;
+        background: rgba(30, 41, 59, 0.7);
+        backdrop-filter: blur(20px) saturate(180%);
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 24px;
+        display: flex;
+        justify-content: space-around;
+        padding: 12px 8px;
+        z-index: 100;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+      }
+
+      .nav-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        color: var(--hint-color);
+        text-decoration: none;
+        font-size: 11px;
+        font-weight: 600;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        flex: 1;
+        position: relative;
+      }
+
+      .nav-item.active { color: var(--button-color); }
+      .nav-icon { 
+        font-size: 0px; 
+        transition: transform 0.3s;
+      }
+      .nav-item.active .nav-icon {
+        transform: translateY(-4px);
+        filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.4));
+      }
+      .nav-item::after {
+        content: '';
+        position: absolute;
+        bottom: -4px;
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: var(--button-color);
+        opacity: 0;
+        transition: opacity 0.3s;
+      }
+      .nav-item.active::after { opacity: 1; }
+    </style>
+  </head>
+  <body>
+    <div id="loading"><div class="spinner"></div></div>
+
+    <div class="header">
+      <div class="header-title">CRM База</div>
+      <div class="header-count" id="total-badge">0</div>
+    </div>
+
+    <div class="stats-bar">
+      <div class="stat-card">
+        <div class="stat-val" id="stat-total">0</div>
+        <div class="stat-label">Всего</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" id="stat-shown">0</div>
+        <div class="stat-label">Найдено</div>
+      </div>
+    </div>
+
+    <div class="add-section">
+      <button class="btn-add-trigger" onclick="openAddModal()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+        Добавить контакты
+      </button>
+    </div>
+
+    <div class="search-wrap">
+      <span class="search-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      </span>
+      <input type="text" id="search-input" placeholder="Поиск контактов..." oninput="onSearch()" />
+    </div>
+
+    <div class="contacts-list" id="contacts-list"></div>
+
+    <div id="toast"></div>
+
+    <!-- Modal -->
+    <div class="modal-backdrop" id="add-modal-backdrop" onclick="if(event.target === this) closeAddModal()">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div class="modal-title">Добавить контакты</div>
+          <button class="modal-close" onclick="closeAddModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <textarea id="bulk-contacts" placeholder="@username1&#10;79991234321&#10;@username2"></textarea>
+          <div class="modal-hint">Введите контакты по одному на строку (номер телефона или @username)</div>
+          <button class="btn-primary" id="btn-save-contacts" onclick="addContactsBulk()">Сохранить список</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="bottom-nav">
+      <a href="/" class="nav-item">
+        <span class="nav-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        </span>
+        <span>Главная</span>
+      </a>
+      <a href="/crm" class="nav-item active">
+        <span class="nav-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </span>
+        <span>CRM</span>
+      </a>
+      <a href="/profile" class="nav-item">
+        <span class="nav-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </span>
+        <span>Профиль</span>
+      </a>
+    </div>
+
+    <script>
+      const tg = window.Telegram.WebApp;
+      tg.expand();
+      
+      const API_BASE = "";
+      let userId = localStorage.getItem("user_id");
+      let webToken = localStorage.getItem("web_token");
+      let initData = tg.initData || "";
+      let allContacts = [];
+      let searchTimer = null;
+
+      function getAuthHeaders() {
+          const headers = { "Content-Type": "application/json" };
+          if (initData) headers["X-Telegram-Init-Data"] = initData;
+          if (webToken) headers["X-Web-Token"] = webToken;
+          return headers;
+      }
+
+      if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+        userId = tg.initDataUnsafe.user.id;
+      } else if (!userId || !webToken) {
+        window.location.href = "/";
+      }
+
+      function showToast(msg, isError = false) {
+        const t = document.getElementById("toast");
+        t.innerText = (isError ? "❌ " : "✅ ") + msg;
+        t.classList.add("show");
+        setTimeout(() => t.classList.remove("show"), 2500);
+      }
+
+      function contactAvatar(contact) {
+        const s = String(contact);
+        if (s.startsWith("@")) return s[1].toUpperCase();
+        return s[0]?.toUpperCase() || "?";
+      }
+
+      function renderContacts(list) {
+        const el = document.getElementById("contacts-list");
+        document.getElementById("stat-shown").innerText = list.length;
+        if (list.length === 0) {
+          el.innerHTML = `<div class="empty-state"><div class="empty-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5"><path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4"/><path d="M14 2v5h5"/><path d="M2 15h10"/><path d="m9 18 3-3-3-3"/></svg>
+          </div><div class="empty-title">Пусто</div><div class="empty-text">База данных пока не содержит подходящих контактов</div></div>`;
+          return;
+        }
+        el.innerHTML = list.map(c => {
+          const cs = String(c);
+          return `<div class="contact-item" id="ci-${CSS.escape(cs)}"><div class="contact-avatar">${contactAvatar(c)}</div><div style="flex:1; overflow:hidden;"><div class="contact-name">${cs}</div><div class="contact-type">Контакт Telegram</div></div><button class="delete-btn" onclick="deleteContact(${JSON.stringify(c)})">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+          </button></div>`;
+        }).join("");
+      }
+
+      async function loadContacts(q = "") {
+        try {
+          const url = `${API_BASE}/api/crm?uid=${userId}` + (q ? `&q=${encodeURIComponent(q)}` : "");
+          const res = await fetch(url, { headers: getAuthHeaders() });
+          const data = await res.json();
+          if (!res.ok) { return; }
+          document.getElementById("stat-total").innerText = data.total;
+          document.getElementById("total-badge").innerText = data.total;
+          renderContacts(data.contacts);
+        } catch(e) {}
+      }
+
+      function onSearch() {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
+          loadContacts(document.getElementById("search-input").value.trim());
+        }, 300);
+      }
+
+      function openAddModal() {
+        document.getElementById("add-modal-backdrop").style.display = "flex";
+        document.getElementById("bulk-contacts").focus();
+        tg.HapticFeedback.impactOccurred("medium");
+      }
+
+      function closeAddModal() {
+        document.getElementById("add-modal-backdrop").style.display = "none";
+      }
+
+      async function addContactsBulk() {
+        const textarea = document.getElementById("bulk-contacts");
+        const btn = document.getElementById("btn-save-contacts");
+        const val = textarea.value.trim();
+        if (!val) { showToast("Список пуст", true); return; }
+
+        const lines = val.split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
+        if (lines.length === 0) return;
+
+        // Нормализация (если не число и не @ - добавляем @)
+        const contacts = lines.map(v => {
+          if (v.startsWith("@")) return v;
+          if (/^\d+$/.test(v)) return v;
+          return "@" + v;
+        });
+
+        btn.disabled = true;
+        btn.innerText = "Добавление...";
+
+        try {
+          const res = await fetch(`${API_BASE}/api/crm/add`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ uid: String(userId), contacts })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            showToast(`Добавлено: ${data.added || 0}`);
+            textarea.value = "";
+            closeAddModal();
+            loadContacts();
+          } else {
+            showToast(data.error || "Ошибка", true);
+          }
+        } catch(e) {
+          showToast("Ошибка сети", true);
+        } finally {
+          btn.disabled = false;
+          btn.innerText = "Сохранить список";
+        }
+      }
+
+      async function deleteContact(contact) {
+        tg.HapticFeedback.impactOccurred("light");
+        try {
+          const res = await fetch(`${API_BASE}/api/crm/delete`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ uid: String(userId), contact })
+          });
+          if (res.ok) { showToast("Удалено"); loadContacts(); }
+        } catch(e) {}
+      }
+
+      // document.getElementById("new-contact").addEventListener("keydown", e => { if (e.key === "Enter") addContact(); });
+
+      (async () => {
+        await loadContacts();
+        document.getElementById("loading").style.display = "none";
+      })();
+    </script>
+  </body>
+</html>
+  </body>
+</html>
