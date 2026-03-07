@@ -327,7 +327,6 @@
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 6px;
         color: var(--hint-color);
         text-decoration: none;
         font-size: 11px;
@@ -549,7 +548,10 @@
           const url = `${API_BASE}/api/crm?uid=${userId}` + (q ? `&q=${encodeURIComponent(q)}` : "");
           const res = await fetch(url, { headers: getAuthHeaders() });
           const data = await res.json();
-          if (!res.ok) { return; }
+          if (!res.ok || data.registered === false || data.error) { 
+              window.location.href = "/";
+              return; 
+          }
           document.getElementById("stat-total").innerText = data.total;
           document.getElementById("total-badge").innerText = data.total;
           renderContacts(data.contacts);
