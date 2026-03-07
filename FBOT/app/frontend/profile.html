@@ -10,15 +10,15 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
       :root {
-        --bg-color: var(--tg-theme-bg-color, #0f172a);
-        --text-color: var(--tg-theme-text-color, #f8fafc);
-        --hint-color: var(--tg-theme-hint-color, #94a3b8);
-        --button-color: var(--tg-theme-button-color, #38bdf8);
+        --bg-color: var(--tg-theme-bg-color, #f8fafc);
+        --text-color: var(--tg-theme-text-color, #0f172a);
+        --hint-color: var(--tg-theme-hint-color, #64748b);
+        --button-color: var(--tg-theme-button-color, #8b5cf6);
         --button-text-color: var(--tg-theme-button-text-color, #ffffff);
-        --secondary-bg-color: var(--tg-theme-secondary-bg-color, #1e293b);
-        --card-bg: rgba(255, 255, 255, 0.03);
-        --border-color: rgba(255, 255, 255, 0.08);
-        --accent-gradient: linear-gradient(135deg, #38bdf8, #818cf8);
+        --secondary-bg-color: var(--tg-theme-secondary-bg-color, #f1f5f9);
+        --card-bg: rgba(255, 255, 255, 0.7);
+        --border-color: rgba(0, 0, 0, 0.06);
+        --accent-gradient: linear-gradient(135deg, #8b5cf6, #3b82f6);
       }
 
       * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -56,7 +56,7 @@
         padding: 32px 24px;
         margin-bottom: 24px;
         text-align: center;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        box-shadow: 0 10px 40px rgba(0,0,0,0.04);
       }
 
       .avatar-wrap {
@@ -78,8 +78,8 @@
         font-weight: 700;
         color: white;
         overflow: hidden;
-        border: 3px solid rgba(255,255,255,0.1);
-        box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+        border: 3px solid #ffffff;
+        box-shadow: 0 12px 24px rgba(139, 92, 246, 0.2);
       }
 
       .avatar-large img {
@@ -123,8 +123,8 @@
 
       .badge-admin {
         display: inline-block;
-        background: rgba(56, 189, 248, 0.1);
-        border: 1px solid rgba(56, 189, 248, 0.2);
+        background: rgba(139, 92, 246, 0.1);
+        border: 1px solid rgba(139, 92, 246, 0.2);
         color: var(--button-color);
         font-size: 12px;
         font-weight: 600;
@@ -152,7 +152,7 @@
         align-items: center;
         text-align: center;
         backdrop-filter: blur(10px);
-        box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.03);
         transition: transform 0.2s;
       }
       .stat-card:active { transform: scale(0.98); }
@@ -165,7 +165,7 @@
         align-items: center;
         justify-content: center;
         margin-bottom: 12px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.02);
       }
 
       .stat-value {
@@ -218,7 +218,7 @@
       }
 
       .menu-item:active { 
-        background: rgba(255,255,255,0.06);
+        background: rgba(0,0,0,0.03);
         transform: translateX(4px);
       }
 
@@ -236,16 +236,16 @@
       .bottom-nav {
         position: fixed;
         bottom: 20px; left: 16px; right: 16px;
-        background: rgba(30, 41, 59, 0.7);
+        background: rgba(255, 255, 255, 0.85);
         backdrop-filter: blur(20px) saturate(180%);
         -webkit-backdrop-filter: blur(20px) saturate(180%);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(0, 0, 0, 0.05);
         border-radius: 24px;
         display: flex;
         justify-content: space-around;
         padding: 12px 8px;
         z-index: 100;
-        box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+        box-shadow: 0 15px 35px rgba(0,0,0,0.06);
       }
 
       .nav-item {
@@ -264,25 +264,21 @@
 
       .nav-item.active { color: var(--button-color); }
       .nav-icon { 
-        font-size: 24px; 
-        transition: transform 0.3s;
+        width: 42px;
+        height: 42px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       }
       .nav-item.active .nav-icon {
-        transform: translateY(-4px);
-        filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.4));
+        background: rgba(139, 92, 246, 0.1);
+        transform: translateY(-2px);
       }
-      .nav-item::after {
-        content: '';
-        position: absolute;
-        bottom: -4px;
-        width: 4px;
-        height: 4px;
-        border-radius: 50%;
-        background: var(--button-color);
-        opacity: 0;
-        transition: opacity 0.3s;
+      .nav-item.active { 
+        color: var(--button-color); 
       }
-      .nav-item.active::after { opacity: 1; }
 
       #loading {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -302,9 +298,9 @@
       /* Auth Modal Styles */
       #auth-backdrop {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(0, 0, 0, 0.8);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
+        background: rgba(255, 255, 255, 0.6);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
         z-index: 300;
         display: none;
         justify-content: center;
@@ -312,15 +308,18 @@
         padding: 20px;
       }
       #auth-screen {
-        background: var(--secondary-bg-color);
+        background: #ffffff;
         border: 1px solid var(--border-color);
         border-radius: 24px;
         padding: 32px 24px;
         text-align: center;
         width: 100%;
         max-width: 360px;
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
         animation: modalIn 0.3s ease-out;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
       }
       @keyframes modalIn {
         from { transform: scale(0.9); opacity: 0; }
@@ -328,13 +327,35 @@
       }
       #qrcode-container {
         background: white;
-        padding: 16px;
-        border-radius: 16px;
-        margin: 20px auto;
+        padding: 20px;
+        border-radius: 24px;
+        margin: 24px auto;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        box-shadow: 0 12px 24px rgba(0,0,0,0.15);
         width: fit-content;
+        min-width: 200px;
+        min-height: 200px;
       }
-      #qrcode-container img {
-        display: block;
+      #qrcode-container img, 
+      #qrcode-container canvas {
+        max-width: 100%;
+        height: auto !important;
+      }
+      .qr-timer-container {
+        margin-top: 12px;
+        font-size: 13px;
+        color: var(--hint-color);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+      }
+      #qr-timer-val {
+        color: var(--button-color);
+        font-weight: 700;
+        min-width: 20px;
       }
       .instructions {
         font-size: 14px;
@@ -371,8 +392,8 @@
         padding: 14px;
         border-radius: 12px;
         border: 1px solid var(--border-color);
-        background: rgba(255,255,255,0.05);
-        color: white;
+        background: rgba(0,0,0,0.02);
+        color: var(--text-color);
         font-size: 16px;
         margin-top: 8px;
         outline: none;
@@ -380,9 +401,55 @@
       input[type="password"]:focus {
         border-color: var(--button-color);
       }
+      
+      /* Merge Modal */
+      #merge-backdrop {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.85); backdrop-filter: blur(10px);
+        z-index: 1000; display: none; justify-content: center; align-items: center; padding: 20px;
+      }
+      .merge-card {
+        background: #1e293b; border-radius: 28px; padding: 32px; width: 100%; max-width: 400px; text-align: center;
+        border: 1px solid rgba(255,255,255,0.1);
+      }
+      /* Global App Loader */
+      #app-loader {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: var(--bg-color);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        z-index: 9999;
+        transition: opacity 0.4s ease-out;
+      }
+      .loader-logo {
+        width: 80px; height: 80px;
+        border-radius: 24px;
+        display: flex; align-items: center; justify-content: center;
+        margin-bottom: 24px;
+        animation: pulse 2s infinite;
+      }
+      @keyframes pulse {
+        0% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.05); opacity: 0.8; }
+        100% { transform: scale(1); opacity: 1; }
+      }
+      .spinner {
+        width: 32px; height: 32px;
+        border: 3px solid rgba(255,255,255,0.1);
+        border-top-color: var(--button-color);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
     </style>
   </head>
   <body>
+    <!-- App Loader -->
+    <div id="app-loader">
+      <div class="loader-logo">
+        <img src="/assets/logo.png" alt="MotionHunter" style="width: 100%; height: 100%; object-fit: contain; border-radius: 24px;" />
+      </div>
+      <div class="spinner"></div>
+    </div>
     <div id="loading"><div class="spinner"></div></div>
 
     <div class="header">
@@ -417,6 +484,19 @@
       </div>
     </div>
 
+    <!-- Audit Section -->
+    <div style="padding: 0 16px 20px;">
+      <div style="font-size: 16px; font-weight: 800; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; color: var(--hint-color);">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20v-6M9 20v-10M15 20v-2M3 20h18"/></svg>
+        Последние события
+      </div>
+      <div id="audit-list" style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="text-align: center; padding: 20px; color: var(--hint-color); font-size: 13px; background: var(--card-bg); border-radius: 16px; border: 1px dashed var(--border-color);">
+          Загрузка событий...
+        </div>
+      </div>
+    </div>
+
     <div class="section-title">Настройки</div>
     <div class="menu-list">
       <div class="menu-item" onclick="tg.showAlert('Версия приложения: 1.2.0')">
@@ -431,6 +511,13 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--button-color)"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
         </span>
         <span class="menu-text">Обновить данные</span>
+        <span class="menu-arrow">→</span>
+      </div>
+      <div class="menu-item" onclick="openPasswordModal()">
+        <span class="menu-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--button-color)"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3L15.5 7.5z"/></svg>
+        </span>
+        <span class="menu-text">Пароль для входа через браузер</span>
         <span class="menu-arrow">→</span>
       </div>
       <div class="menu-item" onclick="showQRAuthScreen()" style="border-color: rgba(56, 189, 248, 0.3)">
@@ -451,6 +538,9 @@
         </div>
         <div class="instructions" id="auth-instructions">Подготовка QR-кода...</div>
         <div id="qrcode-container"></div>
+        <div class="qr-timer-container" id="qr-timer-wrapper" style="display: none;">
+          Обновление через: <span id="qr-timer-val">30</span>с
+        </div>
         
         <div id="password-input-container" style="display: none;">
           <label style="font-size: 14px; display: block; margin-bottom: 8px;">Введите 2FA пароль:</label>
@@ -459,6 +549,30 @@
         </div>
 
         <button class="btn btn-outline" onclick="closeAuthModal()" style="margin-top: 20px">Отмена</button>
+      </div>
+    </div>
+
+    <!-- Merge Modal -->
+    <div id="merge-backdrop">
+      <div class="merge-card">
+         <h2 style="margin-bottom: 16px;">Профиль найден!</h2>
+         <p style="color: var(--hint-color); margin-bottom: 24px;">
+           Номер <b id="merge-phone" style="color: white;"></b> уже зарегистрирован в системе.<br><br>
+           Вы хотите связать этот Telegram-аккаунт с существующим профилем?
+         </p>
+         <button class="btn" onclick="confirmMerge()">Да, связать профили</button>
+         <button class="btn btn-outline" onclick="location.reload()">Отмена</button>
+      </div>
+    </div>
+
+    <!-- Password Modal -->
+    <div id="password-backdrop" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); z-index: 1000; display: none; justify-content: center; align-items: center; padding: 20px;">
+      <div class="merge-card">
+         <h2 style="margin-bottom: 16px;">Установить пароль</h2>
+         <p style="color: var(--hint-color); margin-bottom: 24px;">Этот пароль позволит вам заходить в личный кабинет через любой браузер по номеру телефона.</p>
+         <input type="password" id="new-web-pass" placeholder="Минимум 6 символов" style="width: 100%; padding: 14px; border-radius: 12px; border: 1px solid var(--border-color); background: rgba(255,255,255,0.05); color: white; font-size: 16px; margin-bottom: 20px; outline: none;" />
+         <button class="btn" onclick="savePassword()">Сохранить пароль</button>
+         <button class="btn btn-outline" onclick="closePasswordModal()">Отмена</button>
       </div>
     </div>
 
@@ -486,11 +600,28 @@
     <script>
       const tg = window.Telegram.WebApp;
       tg.expand();
+      
+      // Compatibility shim for older Telegram versions (< 6.2)
+      if (!tg.isVersionAtLeast('6.2')) {
+          tg.showAlert = (msg) => alert(msg);
+          tg.showConfirm = (msg, callback) => {
+              const ok = confirm(msg);
+              if (callback) callback(ok);
+          };
+      }
 
       const API_BASE = "";
       let userId = localStorage.getItem("user_id");
       let webToken = localStorage.getItem("web_token");
       let initData = tg.initData || "";
+
+      function hideAppLoader() {
+        const loader = document.getElementById("app-loader");
+        if (loader) {
+          loader.style.opacity = "0";
+          setTimeout(() => loader.remove(), 400);
+        }
+      }
 
       function getAuthHeaders() {
           const headers = { "Content-Type": "application/json" };
@@ -501,9 +632,37 @@
 
       if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
         userId = tg.initDataUnsafe.user.id;
-      } else if (!userId || !webToken) {
+      } else if (!webToken) {
         // Если нет ни данных телеграма, ни токена - на главную логиниться
         window.location.href = "/";
+      }
+
+      async function loadAudit() {
+        try {
+          const res = await fetch(`${API_BASE}/api/audit`, { headers: getAuthHeaders() });
+          const data = await res.json();
+          const list = document.getElementById("audit-list");
+          if (!res.ok || !data.events || data.events.length === 0) {
+            list.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--hint-color); font-size: 13px; background: var(--card-bg); border-radius: 16px; border: 1px dashed var(--border-color);">Событий пока нет</div>`;
+            return;
+          }
+          
+          list.innerHTML = data.events.map(ev => {
+            const time = ev.time ? ev.time.split(" ")[1].slice(0, 5) : "??:??";
+            const chat = ev.chat_title || "Чат";
+            const contact = ev.contact || "??";
+            return `
+              <div style="background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 16px; padding: 12px 16px; display: flex; align-items: center; gap: 12px;">
+                <div style="width: 36px; height: 36px; border-radius: 10px; background: rgba(56, 189, 248, 0.1); color: var(--button-color); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800;">OK</div>
+                <div style="flex: 1; overflow: hidden;">
+                  <div style="font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${contact}</div>
+                  <div style="font-size: 11px; color: var(--hint-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${chat}</div>
+                </div>
+                <div style="font-size: 12px; font-weight: 600; color: var(--hint-color);">${time}</div>
+              </div>
+            `;
+          }).join("");
+        } catch(e) { console.error(e); }
       }
 
       async function fetchProfile() {
@@ -536,23 +695,27 @@
             document.getElementById("admin-badge-container").innerHTML = '<div class="badge-admin">Администратор</div>';
           }
 
-          setTimeout(() => {
-            const loader = document.getElementById("loading");
-            if (loader) {
-              loader.style.opacity = "0";
-              setTimeout(() => loader.style.display = "none", 400);
-            }
-          }, 500);
+          hideAppLoader();
         } catch (e) {
           tg.showAlert("Ошибка связи с сервером");
+          hideAppLoader();
         }
       }
 
+      let _qrInterval = null;
+      let _timerInterval = null;
+
       async function showQRAuthScreen() {
+        // Сброс старых интервалов
+        if (_qrInterval) clearInterval(_qrInterval);
+        if (_timerInterval) clearInterval(_timerInterval);
+
         tg.HapticFeedback.impactOccurred("medium");
         document.getElementById("auth-backdrop").style.display = "flex";
         document.getElementById("qrcode-container").innerHTML = "";
+        document.getElementById("qrcode-container").style.display = "flex";
         document.getElementById("auth-instructions").innerText = "Генерация...";
+        document.getElementById("qr-timer-wrapper").style.display = "none";
         document.getElementById("password-input-container").style.display = "none";
 
         try {
@@ -568,22 +731,41 @@
             return;
           }
           const qrContainer = document.getElementById("qrcode-container");
-          new QRCode(qrContainer, { text: data.url, width: 200, height: 200 });
+          qrContainer.innerHTML = "";
+          new QRCode(qrContainer, { text: data.url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.H });
           document.getElementById("auth-instructions").innerHTML = "Отсканируйте код в<br><b>Устройства ➡️ Подключить</b>";
+          document.getElementById("qr-timer-wrapper").style.display = "flex";
+          
+          startCountdown(30);
           pollQRStatus(data.session_id);
         } catch (e) {
              document.getElementById("auth-instructions").innerText = "Ошибка загрузки QR";
         }
       }
 
+      function startCountdown(seconds) {
+        let left = seconds;
+        const display = document.getElementById("qr-timer-val");
+        display.innerText = left;
+        
+        if (_timerInterval) clearInterval(_timerInterval);
+        _timerInterval = setInterval(() => {
+          left--;
+          display.innerText = left;
+          if (left <= 0) {
+            clearInterval(_timerInterval);
+            showQRAuthScreen(); // Авто-обновление
+          }
+        }, 1000);
+      }
+
       let _currentSessionId = null;
-      let _pollInterval = null;
 
       function pollQRStatus(id) {
         _currentSessionId = id;
-        if (_pollInterval) clearInterval(_pollInterval);
+        if (_qrInterval) clearInterval(_qrInterval);
         
-        _pollInterval = setInterval(async () => {
+        _qrInterval = setInterval(async () => {
           try {
             const res = await fetch(`${API_BASE}/api/qr_status`, {
               method: "POST",
@@ -593,23 +775,31 @@
             const data = await res.json();
             
             if (data.status === "success") {
-              clearInterval(_pollInterval);
+              clearInterval(_qrInterval);
+              clearInterval(_timerInterval);
               if (data.web_token) {
                  localStorage.setItem("web_token", data.web_token);
                  localStorage.setItem("user_id", data.uid);
               }
               tg.showAlert("Успешное подключение!");
               location.reload();
+            } else if (data.status === "merge_required") {
+              clearInterval(_qrInterval);
+              clearInterval(_timerInterval);
+              document.getElementById('merge-phone').innerText = data.phone;
+              document.getElementById('merge-backdrop').style.display = 'flex';
+              document.getElementById('auth-backdrop').style.display = 'none';
             } else if (data.status === "2fa_required") {
-              clearInterval(_pollInterval);
+              clearInterval(_qrInterval);
+              clearInterval(_timerInterval);
               document.getElementById("qrcode-container").style.display = "none";
+              document.getElementById("qr-timer-wrapper").style.display = "none";
               document.getElementById("auth-instructions").style.display = "block";
               document.getElementById("auth-instructions").innerText = "Введите пароль 2FA:";
               document.getElementById("password-input-container").style.display = "block";
             } else if (data.status === "failed") {
-              clearInterval(_pollInterval);
-              tg.showAlert("Ошибка авторизации. Попробуйте снова.");
-              closeAuthModal();
+              clearInterval(_qrInterval);
+              showQRAuthScreen();
             }
           } catch (e) { console.error("Poll error", e); }
         }, 3000);
@@ -638,12 +828,55 @@
         } catch (e) { tg.showAlert("Ошибка 2FA"); }
       }
 
-      function closeAuthModal() {
-        document.getElementById("auth-backdrop").style.display = "none";
-        if (_pollInterval) clearInterval(_pollInterval);
+      async function confirmMerge() {
+          try {
+              const res = await fetch(`${API_BASE}/api/qr_merge`, {
+                  method: "POST",
+                  headers: getAuthHeaders(),
+                  body: JSON.stringify({ session_id: _currentSessionId })
+              });
+              const data = await res.json();
+              if (res.ok) {
+                  document.getElementById('merge-backdrop').style.display = 'none';
+              } else tg.showAlert(data.error);
+          } catch(e) { tg.showAlert("Ошибка слияния"); }
       }
 
-      fetchProfile();
+      function closeAuthModal() {
+        document.getElementById("auth-backdrop").style.display = "none";
+        if (_qrInterval) clearInterval(_qrInterval);
+        if (_timerInterval) clearInterval(_timerInterval);
+      }
+
+      function openPasswordModal() {
+          document.getElementById('password-backdrop').style.display = 'flex';
+      }
+      function closePasswordModal() {
+          document.getElementById('password-backdrop').style.display = 'none';
+      }
+      async function savePassword() {
+          const password = document.getElementById('new-web-pass').value;
+          if (password.length < 6) return tg.showAlert("Минимум 6 символов");
+          
+          try {
+              const res = await fetch(`${API_BASE}/api/profile/set_password`, {
+                  method: "POST",
+                  headers: getAuthHeaders(),
+                  body: JSON.stringify({ password })
+              });
+              const data = await res.json();
+              if (res.ok) {
+                  tg.showAlert("Пароль успешно установлен!");
+                  closePasswordModal();
+              } else tg.showAlert(data.error);
+          } catch(e) { tg.showAlert("Ошибка сохранения пароля"); }
+      }
+
+      (async () => {
+        await fetchProfile();
+        await loadAudit();
+        document.getElementById("loading").style.display = "none";
+      })();
     </script>
   </body>
 </html>

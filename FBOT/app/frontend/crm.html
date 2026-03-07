@@ -8,17 +8,17 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <style>
       :root {
-        --bg-color: var(--tg-theme-bg-color, #0f172a);
-        --text-color: var(--tg-theme-text-color, #f8fafc);
-        --hint-color: var(--tg-theme-hint-color, #94a3b8);
-        --button-color: var(--tg-theme-button-color, #38bdf8);
+        --bg-color: var(--tg-theme-bg-color, #f8fafc);
+        --text-color: var(--tg-theme-text-color, #0f172a);
+        --hint-color: var(--tg-theme-hint-color, #64748b);
+        --button-color: var(--tg-theme-button-color, #8b5cf6);
         --button-text-color: var(--tg-theme-button-text-color, #ffffff);
-        --secondary-bg-color: var(--tg-theme-secondary-bg-color, #1e293b);
-        --card-bg: rgba(255, 255, 255, 0.03);
-        --border-color: rgba(255, 255, 255, 0.08);
+        --secondary-bg-color: var(--tg-theme-secondary-bg-color, #f1f5f9);
+        --card-bg: rgba(255, 255, 255, 0.7);
+        --border-color: rgba(0, 0, 0, 0.06);
         --success-color: #10b981;
         --danger-color: #ef4444;
-        --accent-gradient: linear-gradient(135deg, #38bdf8, #818cf8);
+        --accent-gradient: linear-gradient(135deg, #8b5cf6, #3b82f6);
       }
 
       * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -42,7 +42,7 @@
         border-bottom: 1px solid var(--border-color);
         position: sticky;
         top: 0;
-        background: rgba(15, 23, 42, 0.8);
+        background: rgba(248, 250, 252, 0.85);
         backdrop-filter: blur(20px);
         -webkit-backdrop-filter: blur(20px);
         z-index: 100;
@@ -60,8 +60,8 @@
 
       .header-count {
         margin-left: auto;
-        background: rgba(56, 189, 248, 0.1);
-        border: 1px solid rgba(56, 189, 248, 0.2);
+        background: rgba(139, 92, 246, 0.1);
+        border: 1px solid rgba(139, 92, 246, 0.2);
         color: var(--button-color);
         font-size: 13px;
         font-weight: 700;
@@ -83,7 +83,8 @@
         border-radius: 20px;
         padding: 16px;
         text-align: center;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        backdrop-filter: blur(12px);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.03);
       }
 
       .stat-val { font-size: 24px; font-weight: 800; color: var(--button-color); letter-spacing: -0.5px; }
@@ -108,14 +109,14 @@
         gap: 10px;
         cursor: pointer;
         transition: all 0.2s;
-        box-shadow: 0 8px 20px rgba(56, 189, 248, 0.25);
+        box-shadow: 0 8px 16px rgba(139, 92, 246, 0.2);
       }
       .btn-add-trigger:active { transform: scale(0.97); opacity: 0.9; }
 
       /* Modal */
       .modal-backdrop {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(0,0,0,0.85);
+        background: rgba(255,255,255,0.6);
         backdrop-filter: blur(8px);
         -webkit-backdrop-filter: blur(8px);
         display: none; justify-content: center; align-items: flex-end;
@@ -124,13 +125,13 @@
       }
 
       .modal-content {
-        background: #1e293b;
+        background: #ffffff;
         width: 100%;
         max-width: 450px;
         border-radius: 28px 28px 20px 20px;
         padding: 24px;
         border: 1px solid var(--border-color);
-        box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
+        box-shadow: 0 -10px 40px rgba(0,0,0,0.15);
         animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       }
 
@@ -142,18 +143,18 @@
       }
       .modal-title { font-size: 18px; font-weight: 800; color: var(--text-color); }
       .modal-close { 
-        background: rgba(255,255,255,0.05); border: none; color: var(--hint-color);
+        background: rgba(0,0,0,0.05); border: none; color: var(--hint-color);
         width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
       }
 
       .modal-body textarea {
         width: 100%;
         min-height: 160px;
-        background: rgba(0,0,0,0.2);
+        background: rgba(0,0,0,0.02);
         border: 1px solid var(--border-color);
         border-radius: 16px;
         padding: 16px;
-        color: white;
+        color: var(--text-color);
         font-family: inherit;
         font-size: 14px;
         line-height: 1.5;
@@ -188,7 +189,7 @@
 
       .search-wrap input {
         width: 100%;
-        background: rgba(255,255,255,0.03);
+        background: rgba(0,0,0,0.02);
         border: 1px solid var(--border-color);
         color: var(--text-color);
         border-radius: 16px;
@@ -225,7 +226,7 @@
         transition: all 0.2s;
         animation: fadeIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       }
-      .contact-item:active { transform: scale(0.98); background: rgba(255,255,255,0.05); }
+      .contact-item:active { transform: scale(0.98); background: rgba(0,0,0,0.02); }
 
       @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
@@ -234,7 +235,7 @@
         border-radius: 14px;
         background: var(--accent-gradient);
         display: flex; align-items: center; justify-content: center;
-        font-weight: 800; font-size: 18px; color: white;
+        color: var(--text-color); font-weight: 600; font-size: 14px; color: white;
         flex-shrink: 0;
         box-shadow: 0 4px 10px rgba(0,0,0,0.2);
       }
@@ -296,7 +297,7 @@
       /* Toast */
       #toast {
         position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%) translateY(20px);
-        background: rgba(30, 41, 59, 0.95);
+        background: rgba(255, 255, 255, 0.95);
         backdrop-filter: blur(10px);
         border: 1px solid var(--border-color);
         color: var(--text-color); padding: 12px 24px; border-radius: 100px;
@@ -338,28 +339,60 @@
 
       .nav-item.active { color: var(--button-color); }
       .nav-icon { 
-        font-size: 0px; 
-        transition: transform 0.3s;
+        width: 42px;
+        height: 42px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       }
       .nav-item.active .nav-icon {
-        transform: translateY(-4px);
-        filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.4));
+        background: rgba(56, 189, 248, 0.15);
+        transform: translateY(-2px);
       }
-      .nav-item::after {
-        content: '';
-        position: absolute;
-        bottom: -4px;
-        width: 4px;
-        height: 4px;
+      .nav-item.active { 
+        color: var(--button-color); 
+      }
+      /* Global App Loader */
+      #app-loader {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: var(--bg-color);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        z-index: 9999;
+        transition: opacity 0.4s ease-out;
+      }
+      .loader-logo {
+        width: 80px; height: 80px;
+        border-radius: 24px;
+        display: flex; align-items: center; justify-content: center;
+        margin-bottom: 24px;
+        animation: pulse 2s infinite;
+      }
+      @keyframes pulse {
+        0% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.05); opacity: 0.8; }
+        100% { transform: scale(1); opacity: 1; }
+      }
+      .spinner {
+        width: 32px; height: 32px;
+        border: 3px solid rgba(255,255,255,0.1);
+        border-top-color: var(--button-color);
         border-radius: 50%;
-        background: var(--button-color);
-        opacity: 0;
-        transition: opacity 0.3s;
+        animation: spin 0.8s linear infinite;
       }
-      .nav-item.active::after { opacity: 1; }
+      @keyframes spin { to { transform: rotate(360deg); } }
     </style>
   </head>
   <body>
+    <!-- App Loader -->
+    <div id="app-loader">
+      <div class="loader-logo">
+        <img src="/assets/logo.png" alt="MotionHunter" style="width: 100%; height: 100%; object-fit: contain; border-radius: 24px;" />
+      </div>
+      <div class="spinner"></div>
+    </div>
+
     <div id="loading"><div class="spinner"></div></div>
 
     <div class="header">
@@ -378,10 +411,18 @@
       </div>
     </div>
 
-    <div class="add-section">
-      <button class="btn-add-trigger" onclick="openAddModal()">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-        Добавить контакты
+    <div class="add-section" style="display: flex; gap: 8px;">
+      <button class="btn-primary" onclick="collectDialogs()" style="flex: 1; border-radius: 18px; padding: 14px; font-size: 14px; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); color: var(--button-color);">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 5px; vertical-align: middle;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+        Собрать чаты
+      </button>
+      <button class="btn-add-trigger" onclick="openAddModal()" style="flex: 1.5; font-size: 14px; padding: 14px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+        Добавить
+      </button>
+      <button class="btn-primary" onclick="exportCRM()" style="flex: 1; border-radius: 18px; padding: 14px; font-size: 14px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 5px; vertical-align: middle;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        CSV
       </button>
     </div>
 
@@ -436,12 +477,29 @@
       const tg = window.Telegram.WebApp;
       tg.expand();
       
+      // Compatibility shim for older Telegram versions (< 6.2)
+      if (!tg.isVersionAtLeast('6.2')) {
+          tg.showAlert = (msg) => alert(msg);
+          tg.showConfirm = (msg, callback) => {
+              const ok = confirm(msg);
+              if (callback) callback(ok);
+          };
+      }
+      
       const API_BASE = "";
       let userId = localStorage.getItem("user_id");
       let webToken = localStorage.getItem("web_token");
       let initData = tg.initData || "";
       let allContacts = [];
       let searchTimer = null;
+
+      function hideAppLoader() {
+        const loader = document.getElementById("app-loader");
+        if (loader) {
+          loader.style.opacity = "0";
+          setTimeout(() => loader.remove(), 400);
+        }
+      }
 
       function getAuthHeaders() {
           const headers = { "Content-Type": "application/json" };
@@ -452,7 +510,7 @@
 
       if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
         userId = tg.initDataUnsafe.user.id;
-      } else if (!userId || !webToken) {
+      } else if (!webToken) {
         window.location.href = "/";
       }
 
@@ -466,7 +524,7 @@
       function contactAvatar(contact) {
         const s = String(contact);
         if (s.startsWith("@")) return s[1].toUpperCase();
-        return s[0]?.toUpperCase() || "?";
+        return (s[0] ? s[0].toUpperCase() : "?");
       }
 
       function renderContacts(list) {
@@ -480,7 +538,7 @@
         }
         el.innerHTML = list.map(c => {
           const cs = String(c);
-          return `<div class="contact-item" id="ci-${CSS.escape(cs)}"><div class="contact-avatar">${contactAvatar(c)}</div><div style="flex:1; overflow:hidden;"><div class="contact-name">${cs}</div><div class="contact-type">Контакт Telegram</div></div><button class="delete-btn" onclick="deleteContact(${JSON.stringify(c)})">
+          return `<div class="contact-item" id="ci-${CSS.escape(cs)}"><div class="contact-avatar">${contactAvatar(c)}</div><div style="flex:1; overflow:hidden;"><div class="contact-name">${cs}</div><div class="contact-type">Контакт Telegram</div></div><button class="delete-btn" onclick='deleteContact(${JSON.stringify(c)})'>
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
           </button></div>`;
         }).join("");
@@ -496,6 +554,7 @@
           document.getElementById("total-badge").innerText = data.total;
           renderContacts(data.contacts);
         } catch(e) {}
+        finally { hideAppLoader(); }
       }
 
       function onSearch() {
@@ -558,15 +617,80 @@
       }
 
       async function deleteContact(contact) {
-        tg.HapticFeedback.impactOccurred("light");
+        tg.showConfirm(`Удалить контакт ${contact}?`, async (ok) => {
+          if (!ok) return;
+          tg.HapticFeedback.impactOccurred("light");
+          try {
+            const res = await fetch(`${API_BASE}/api/crm/delete`, {
+              method: "POST",
+              headers: getAuthHeaders(),
+              body: JSON.stringify({ uid: String(userId), contact })
+            });
+            if (res.ok) { showToast("Удалено"); loadContacts(); }
+          } catch(e) {}
+        });
+      }
+
+      async function collectDialogs() {
+        tg.showConfirm("Бот начнет сканирование твоих старых личных диалогов и добавит их в базу. Продолжить?", async (ok) => {
+          if (!ok) return;
+          showToast("Сбор начался, подождите...");
+          try {
+            const res = await fetch(`${API_BASE}/api/crm/collect`, {
+              method: "POST",
+              headers: getAuthHeaders(),
+              body: JSON.stringify({ uid: String(userId) })
+            });
+            const data = await res.json();
+            if (res.ok) {
+              showToast(`Готово! Найдено: ${data.added}`);
+              loadContacts();
+            } else {
+              showToast(data.error || "Ошибка", true);
+            }
+          } catch(e) {
+            showToast("Ошибка сети", true);
+          }
+        });
+      }
+
+      async function exportCRM() {
         try {
-          const res = await fetch(`${API_BASE}/api/crm/delete`, {
-            method: "POST",
-            headers: getAuthHeaders(),
-            body: JSON.stringify({ uid: String(userId), contact })
-          });
-          if (res.ok) { showToast("Удалено"); loadContacts(); }
-        } catch(e) {}
+          const isTMA = window.Telegram && window.Telegram.WebApp && userId;
+          const url = `${API_BASE}/api/crm/export` + (isTMA ? `?uid=${userId}` : "");
+          
+          const res = await fetch(url, { headers: getAuthHeaders() });
+          
+          if (isTMA) {
+             const data = await res.json();
+             if (res.ok && data.status === "sent_via_telegram") {
+                tg.showAlert("Файл отправлен тебе в Telegram! 📂\nПроверь чат с ботом.");
+             } else {
+                showToast(data.error || "Ошибка экспорта", true);
+             }
+             return;
+          }
+
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            showToast(data.error || "Ошибка экспорта", true);
+            return;
+          }
+
+          const blob = await res.blob();
+          const downloadUrl = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = downloadUrl;
+          a.download = `crm_export_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.csv`;
+          document.body.appendChild(a);
+          a.click();
+          window.URL.revokeObjectURL(downloadUrl);
+          a.remove();
+          showToast("Готово!");
+        } catch(e) {
+          showToast("Ошибка сети", true);
+        }
       }
 
       // document.getElementById("new-contact").addEventListener("keydown", e => { if (e.key === "Enter") addContact(); });
@@ -576,7 +700,5 @@
         document.getElementById("loading").style.display = "none";
       })();
     </script>
-  </body>
-</html>
   </body>
 </html>

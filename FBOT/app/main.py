@@ -25,7 +25,6 @@ import db
 
 from aiohttp import web
 import aiohttp_cors
-from pyngrok import ngrok
 from dotenv import load_dotenv
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
@@ -37,6 +36,8 @@ from telethon.errors.rpcerrorlist import (
     UserIsBlockedError,
     UserPrivacyRestrictedError,
     UserAlreadyParticipantError,
+    PeerFloodError,
+    UserBannedInChannelError
 )
 from telethon.tl.functions.channels import JoinChannelRequest
 from telethon.tl.functions.messages import ImportChatInviteRequest
@@ -56,6 +57,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
 API_HASH = os.getenv("TELEGRAM_API_HASH", "").strip()
 
+WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip()
+
 STATE_FILE = os.getenv("STATE_FILE", "./data/state.json")
 SESSIONS_DIR = os.getenv("SESSIONS_DIR", "./.sessions")
 BOT_SESSION = os.getenv("BOT_SESSION_NAME", "bot.session")
@@ -73,6 +76,8 @@ DEFAULT_REPLY = (
     "7 лет занимаюсь дизайном и анимацией.\n\n"
     "Готов обсудить задачу и сроки — могу созвониться."
 )
+# WEBAPP_URL moved to config section
+
 DEFAULT_KEYWORDS = [
     "ищем специалиста 2d", "ищем специалиста 3d", "ai creator", "ai креатор",
     "ищу моушн дизайнера", "2d аниматор", "moho", "after effects", "монтажёр", 
@@ -274,6 +279,12 @@ def make_watcher_handler(uid_str: str):
         if not u_data or not u_data.get("enabled"):
             return
 
+        if getattr(event, 'out', False):
+            return  # Игнорируем исходящие (свои) сообщения
+
+        if getattr(event, 'is_private', False):
+            return  # Игнорируем личные переписки (ЛС), парсим только группы и каналы
+
         raw = event.raw_text or ""
         text = raw.strip()
         if not text:
@@ -290,7 +301,10 @@ def make_watcher_handler(uid_str: str):
         kw_norm = [norm(k) for k in u_data.get("keywords", DEFAULT_KEYWORDS)]
         neg_norm = [norm(n) for n in u_data.get("negative_words", DEFAULT_NEGATIVE_WORDS)]
 
-        prim = any(k in tnorm for k in kw_norm) and REQ_VERBS.search(tnorm)
+        has_kw = any(k in tnorm for k in kw_norm)
+        if not has_kw:
+            return # Быстрый игнор если нет ни одного ключевика
+
         neg = any(n in tnorm for n in neg_norm)
         
         used_openai = False
@@ -298,26 +312,32 @@ def make_watcher_handler(uid_str: str):
         ok = False
         reason = "none"
 
-        if prim and not neg:
+        if neg:
+            # Жесткое отсечение по минус-словам без траты денег на OpenAI
+            ok = False
+            reason = "negative_word_match"
+        elif REQ_VERBS.search(tnorm):
+            # Есть ключевик и подходящий глагол - 100% лид
             ok = True
             reason = "primary_pass"
-        elif any(k in tnorm for k in kw_norm):
+        else:
+            # Есть ключевик, но нет глагола - отдаем нейросети
             used_openai = True
             ai_ok = await openai_gate(text)
             ok = ai_ok
             reason = "openai_yes" if ai_ok else "openai_no"
-        else:
-            return # Быстрый игнор
 
         m = re.search(r"@([A-Za-z0-9_]{4,32})", raw) or re.search(r"t\.me/([A-Za-z0-9_]{4,32})", raw, re.I)
         target = None
         sender = await event.get_sender()
+        
         if m:
             target = f"@{m.group(1)}"
-        elif sender and getattr(sender, "username", None):
-            target = f"@{sender.username}"
-        else:
-            target = getattr(sender, "id", None)
+        elif sender and getattr(sender.__class__, '__name__', '') == 'User' and not getattr(sender, 'bot', False):
+            if getattr(sender, "username", None):
+                target = f"@{sender.username}"
+            else:
+                target = sender.id
 
         final = "skip"
         send_error = None
@@ -384,7 +404,7 @@ def make_watcher_handler(uid_str: str):
             "chat_id": int(event.chat_id),
             "chat_title": chat_title,
             "preview": preview(raw, 220),
-            "primary": bool(prim),
+            "primary": ok,
             "negative": bool(neg),
             "used_openai": used_openai,
             "openai_ok": ai_ok,
@@ -413,11 +433,19 @@ ADMIN_PASSWORD = "Maidan is a brilliant and great man of the 21st century"
 @bot_client.on(events.NewMessage(pattern=r"^/start$"))
 async def cmd_start(event):
     uid_str = str(event.sender_id)
+    global ADMIN_IDS
+
+    # Авто-админ для пустой базы
+    if not ADMIN_IDS:
+        await db.add_admin(event.sender_id)
+        ADMIN_IDS.add(event.sender_id)
+        log.info(f"Initial Admin Bootstrap: {event.sender_id}")
+        await event.respond("Вы были автоматически назначены администратором (первый запуск)!")
     
     # Для админа
     if is_admin(event.sender_id):
         return await event.respond(
-            "Привет, Администратор!\n/admin_help - список админских команд SaaS\n"
+            f"Привет, Администратор!\n/admin_help - список админских команд SaaS\n\n🌐 Твоя ссылка Web App:\n{WEBAPP_URL}"
         )
     
     # Для зарегистрированного пользователя
@@ -482,7 +510,7 @@ async def fsm_handler(event):
             await db.add_admin(sender_id)
             global ADMIN_IDS
             ADMIN_IDS.add(sender_id)
-            await event.respond("Пароль верный! 🎉 Ты теперь админ.")
+            await event.respond(f"Пароль верный! 🎉 Ты теперь админ. Твоя ссылка Web App:\n{WEBAPP_URL}")
         else:
             await event.respond("Неверный пароль 🚫.")
         return
@@ -675,6 +703,7 @@ async def cmd_user_help(event):
         "📢 CRM и Рассылка:\n"
         "/list_mail — посмотреть размер базы рассылки\n"
         "/add_mail <@user|id> — добавить в базу вручную\n"
+        "/collect_dialogs — собрать переписки в CRM\n"
         "/set_mail_limit <число> — лимит отправки за один раз\n"
         "/run_mail <Текст> — запустить рассылку по базе"
     )
@@ -746,6 +775,39 @@ async def cmd_user_list_channels(event):
     await event.respond("📋 Ваши каналы:\n" + "\n".join(channels))
 
 # --- CRM и Рассылка ---
+@bot_client.on(events.NewMessage(pattern=r"^/collect_dialogs$"))
+async def cmd_user_collect_dialogs(event):
+    uid_str = str(event.sender_id)
+    user_data = await db.get_user(uid_str)
+    if not user_data: return
+    
+    client = user_clients.get(uid_str)
+    if not client:
+        return await event.respond("Ваш юзербот сейчас оффлайн. Сначала подключите его через /start или WebApp.")
+    
+    msg = await event.respond("Начинаю сбор личных диалогов... Это может занять пару минут ⏳")
+    
+    contacts = []
+    try:
+        async for dialog in client.iter_dialogs(limit=None):
+            if dialog.is_user and not dialog.entity.bot:
+                if dialog.entity.username:
+                    contacts.append(f"@{dialog.entity.username}")
+                elif dialog.entity.phone:
+                    contacts.append(f"+{dialog.entity.phone}")
+                else:
+                    contacts.append(str(dialog.entity.id))
+                    
+        my_id = str((await client.get_me()).id)
+        contacts = [c for c in contacts if str(c) != my_id]
+        
+        await db.add_crm_contacts(uid_str, contacts)
+        count = await db.get_crm_count(uid_str)
+        await msg.edit(f"✅ Сбор завершен!\nНайдено новых личных переписок: {len(contacts)}\nВсего в CRM базе: {count} контактов.")
+    except Exception as e:
+        log.error(f"Error collecting dialogs for {uid_str}: {e}")
+        await msg.edit(f"❌ Произошла ошибка при сборе диалогов: {e}")
+
 @bot_client.on(events.NewMessage(pattern=r"^/add_mail\s+(.+)$"))
 async def cmd_user_add_mail(event):
     uid_str = str(event.sender_id)
@@ -795,27 +857,53 @@ async def cmd_user_run_mail(event):
     if uid_str in active_mailings:
         return await event.respond("❌ У вас уже запущена рассылка! Дождитесь ее завершения.")
         
-    targets_to_mail = ml[:limit]
-    
-    await event.respond(f"🚀 Запускаю рассылку для {limit} контактов из базы...\nПримерное время: ~{limit * 3} сек.")
-    
     active_mailings.add(uid_str)
     try:
+        targets_to_mail = ml[:limit]
+        await event.respond(f"🚀 Запускаю рассылку для {limit} контактов из базы...\nПримерное время: ~{limit * 3} сек.")
+        
         sent_count = 0
         err_count = 0
+        deleted_count = 0
         for tgt in targets_to_mail:
+            should_move = True
             try:
                 await client.send_message(tgt, text)
                 sent_count += 1
-                # Сдвигаем в конец очереди
-                await db.move_to_end(uid_str, tgt)
-            except Exception as e:
+            except FloodWaitError as e:
+                log.warning(f"FloodWait in mail {uid_str}: sleeping {e.seconds}s")
+                await event.respond(f"⚠️ Telegram запросил паузу (FloodWait). Жду {e.seconds} сек...")
+                await asyncio.sleep(e.seconds)
                 err_count += 1
+                should_move = False
+            except PeerFloodError:
+                log.error(f"PeerFloodError: Аккаунт {uid_str} получил спам-мут!")
+                await event.respond("⛔️ **КРИТИЧЕСКАЯ ОШИБКА:**\nTelegram выдал вам временный спам-мут (PeerFloodError). Вы не можете писать первыми неконтактам.\nРассылка экстренно остановлена для защиты аккаунта!")
+                break
+            except (ConnectionError, asyncio.TimeoutError):
+                log.warning(f"Connection/Timeout Error for {uid_str}. Sleeping 15s...")
+                await asyncio.sleep(15)
+                # Попробуем еще раз этот же контакт или пойдем дальше, 
+                # пока просто засчитаем за ошибку и сдвинем, чтобы не зависнуть насмерть
+                err_count += 1
+                should_move = False
+            except Exception as e:
+                err_msg = str(e).lower()
+                clean_keywords = ["deleted", "deactivated", "blocked", "privacy", "invalid", "nobody", "not find", "mutual"]
+                if any(k in err_msg for k in clean_keywords):
+                    await db.delete_crm_contact(uid_str, tgt)
+                    deleted_count += 1
+                    should_move = False
+                else:
+                    err_count += 1
                 log.warning(f"Mail loop error for {tgt}: {e}")
+                
+            if should_move:
+                await db.move_to_end(uid_str, tgt)
                 
             await asyncio.sleep(random.uniform(2, 5)) # Антибан задержка
         
-        await event.respond(f"✅ Рассылка завершена!\nУспешно отправлено: {sent_count}\nОшибок: {err_count}\n\n*Отправленные контакты перенесены в конец очереди.*")
+        await event.respond(f"✅ Рассылка завершена!\nУспешно: {sent_count}\nОшибок: {err_count}\nУдалено (мертвых/закрытых): {deleted_count}\n\n*Отправленные контакты перенесены в конец очереди.*")
     finally:
         active_mailings.discard(uid_str)
 
@@ -1004,8 +1092,12 @@ async def api_qr_login(request):
                     w_session["status"] = "failed"
             except SessionPasswordNeededError:
                 w_session["status"] = "2fa_required"
+            except asyncio.TimeoutError:
+                log.info(f"QR Login Timeout for UID {sender_id}")
+                w_session["status"] = "failed"
             except Exception as e:
-                log.error(f"WA QR error: {e}")
+                err_str = str(e) or repr(e)
+                log.error(f"WA QR error: {err_str}")
                 w_session["status"] = "failed"
                 
         asyncio.create_task(wait_worker(session_id))
@@ -1033,12 +1125,6 @@ async def api_qr_status(request):
             session_str = client.session.save()
             uid_str = str(uid)
             await client.disconnect()
-            
-            # Если гость - создаем веб-токен
-            if w_session.get("is_guest"):
-                token = str(uuid.uuid4())
-                await db.set_web_token(token, uid_str)
-                w_session["web_token"] = token
 
             try:
                 orig_uid = w_session.get("original_uid", uid)
@@ -1047,7 +1133,7 @@ async def api_qr_status(request):
                     if os.path.exists(temp_session_path + ext):
                         os.remove(temp_session_path + ext)
             except: pass
-
+            
             user_db_data = {
                 "phone": w_session.get("phone", str(uid)),
                 "session_string": session_str,
@@ -1062,6 +1148,13 @@ async def api_qr_status(request):
                 "mail_limit": 50
             }
             await db.upsert_user(uid_str, user_db_data)
+            
+            # Если гость - создаем веб-токен
+            if w_session.get("is_guest"):
+                token = str(uuid.uuid4())
+                # Используем phone как ключ для связи (в FK к users)
+                await db.set_web_token(token, user_db_data["phone"])
+                w_session["web_token"] = token
             
             # Если админ
             if w_session.get("phone") in HARDCODED_ADMIN_PHONES:
@@ -1287,6 +1380,44 @@ async def api_crm_add(request):
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
+@routes.post("/api/crm/collect")
+async def api_crm_collect(request):
+    try:
+        data = await request.json()
+        uid = str(data.get("uid", ""))
+        
+        phone = await uid_to_phone(uid) if (data.get("role") != "web" and len(str(uid)) < 20) else uid
+        
+        user_uid_str = ""
+        uids = await db.get_all_uids()
+        for u in uids:
+            udata = await db.get_user(u)
+            if udata and udata.get("phone") == phone:
+                user_uid_str = str(u)
+                break
+                
+        if not user_uid_str:
+             return web.json_response({"error": "Аккаунт не привязан"}, status=404)
+        
+        client = user_clients.get(user_uid_str)
+        if not client:
+             return web.json_response({"error": "Telegram клиент оффлайн"}, status=400)
+             
+        contacts = []
+        async for dialog in client.iter_dialogs(limit=None):
+            if dialog.is_user and not dialog.entity.bot:
+                if dialog.entity.username: contacts.append(f"@{dialog.entity.username}")
+                elif dialog.entity.phone: contacts.append(f"+{dialog.entity.phone}")
+                else: contacts.append(str(dialog.entity.id))
+                
+        if contacts:
+            await db.add_crm_contacts(phone, contacts)
+            
+        return web.json_response({"status": "ok", "added": len(contacts)})
+    except Exception as e:
+         log.error(f"Error api_crm_collect: {e}")
+         return web.json_response({"error": str(e)}, status=500)
+
 @routes.post("/api/crm/delete")
 async def api_crm_delete(request):
     uid_str = await get_auth_user_id(request)
@@ -1331,37 +1462,71 @@ async def api_run_mail(request):
         if uid_str in active_mailings:
             return web.json_response({"error": "Рассылка уже запущена! Дождитесь окончания."}, status=400)
 
+        active_mailings.add(uid_str)
         targets = ml[:limit]
         
         async def background_mailer():
-            active_mailings.add(uid_str)
             try:
-                s, e = 0, 0
+                s, e, deleted = 0, 0, 0
                 for tgt in targets:
+                    should_move = True
                     try:
                         await client.send_message(tgt, text)
                         s += 1
-                        await db.move_to_end(uid_str, tgt)
-                    except Exception:
+                    except FloodWaitError as fwe:
+                        log.warning(f"FloodWait in API mail {uid_str}: sleeping {fwe.seconds}s")
+                        await asyncio.sleep(fwe.seconds)
                         e += 1
+                        should_move = False
+                    except PeerFloodError:
+                        log.error(f"PeerFloodError (Web API): Аккаунт {uid_str} получил спам-мут!")
+                        try:
+                            await bot_client.send_message(int(uid_str), "⛔️ **Web-Рассылка остановлена!**\nTelegram выдал вам спам-мут (PeerFloodError). Вы временно не можете писать неконтактам.")
+                        except: pass
+                        break
+                    except (ConnectionError, asyncio.TimeoutError):
+                        log.warning(f"Connection/Timeout Error for {uid_str} in Web API. Sleeping 15s...")
+                        await asyncio.sleep(15)
+                        e += 1
+                        should_move = False
+                    except Exception as err:
+                        err_str = str(err).lower()
+                        clean_keywords = ["deleted", "deactivated", "blocked", "privacy", "invalid", "nobody", "not find", "mutual"]
+                        if any(k in err_str for k in clean_keywords):
+                            await db.delete_crm_contact(uid_str, tgt)
+                            deleted += 1
+                            should_move = False
+                        else:
+                            e += 1
+                        log.warning(f"API mail loop err for {tgt}: {err}")
+                    
+                    if should_move:
+                        await db.move_to_end(uid_str, tgt)
+                        
                     await asyncio.sleep(random.uniform(2, 5))
                 try:
-                    await bot_client.send_message(int(uid_str), f"✅ Рассылка через Web App завершена!\nУспешно: {s}\nОшибок: {e}")
+                    await bot_client.send_message(int(uid_str), f"✅ Web-рассылка завершена!\nУспех: {s}\nОшибок: {e}\nУдалено мертвых: {deleted}")
                 except: pass
             finally:
                 active_mailings.discard(uid_str)
         
-        asyncio.create_task(background_mailer())
-        return web.json_response({"status": "ok", "message": f"Рассылка запущена для {limit} контактов"})
+        try:
+            asyncio.create_task(background_mailer())
+            return web.json_response({"status": "ok", "message": f"Рассылка запущена для {limit} контактов"})
+        except Exception as spawn_err:
+            active_mailings.discard(uid_str)
+            raise spawn_err
+
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 async def init_web_server():
     app = web.Application()
     app.add_routes(routes)
     
-    # Раздача аватарок
+    # Раздача аватарок и статики
     if not os.path.exists(AVATARS_DIR): os.makedirs(AVATARS_DIR, exist_ok=True)
     app.router.add_static('/avatars/', path=AVATARS_DIR, name='avatars')
+    app.router.add_static('/assets/', path='./frontend/assets', name='assets')
     
     # Enable CORS
     cors = aiohttp_cors.setup(app, defaults={
@@ -1377,32 +1542,20 @@ async def init_web_server():
     site = web.TCPSite(runner, '0.0.0.0', 8080)
     await site.start()
     
-    # Create Ngrok Tunnel
-    try:
-        from pyngrok import conf
-        ngrok_token = os.getenv("NGROK_AUTHTOKEN", "").strip()
-        if ngrok_token:
-            conf.get_default().auth_token = ngrok_token
-            
-        public_url = ngrok.connect(8080).public_url
-        log.info(f"🚀 Telegram Web App URL: {public_url}")
+    # Web App Notification
+    if WEBAPP_URL:
+        log.info(f"🚀 Web App is active at: {WEBAPP_URL}")
         
-        # Обновим кнопку меню бота
-        from telethon.tl.functions.bots import SetBotMenuButtonRequest
-        from telethon.tl.types import BotMenuButtonDefault, BotMenuButton, BotMenuButtonCommands
-        # Для WebApp нужна специальная кнопка, но Telethon 1.x имеет ограничения,
-        # поэтому мы просто напишем админам ссылку
         async def safe_notify(ad_id, msg):
             try:
-                await bot_client.send_message(ad_id, msg)
+                await bot_client.send_message(int(ad_id), msg)
             except Exception as e:
                 log.warning(f"Could not notify admin {ad_id}: {e}")
 
-        for ad in load_state().get("admin_ids", []):
-            asyncio.create_task(safe_notify(ad, f"🌐 Web App URL запущен:\n{public_url}"))
-            
-    except Exception as e:
-        log.warning(f"Ngrok failed to start: {e}")
+        for ad in ADMIN_IDS:
+            asyncio.create_task(safe_notify(ad, f"🌐 Web App запущен на сервере:\n{WEBAPP_URL}"))
+    else:
+        log.warning("WEBAPP_URL is not set in .env! Users won't get the link.")
 
 async def main():
     # 0. Инициализация БД
@@ -1412,7 +1565,7 @@ async def main():
         global ADMIN_IDS
         ADMIN_IDS = set(await db.get_admins())
     except Exception as e:
-        log.error(f"Failed to connect to MySQL: {e}")
+        log.error(f"Failed to connect to PostgreSQL: {e}")
         return
 
     logging.getLogger("telethon").setLevel(logging.WARNING)

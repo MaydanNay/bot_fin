@@ -17,19 +17,15 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
       :root {
-        --bg-color: var(--tg-theme-bg-color, #0f172a);
-        --text-color: var(--tg-theme-text-color, #f8fafc);
-        --hint-color: var(--tg-theme-hint-color, #94a3b8);
-        --link-color: var(--tg-theme-link-color, #38bdf8);
-        --button-color: var(--tg-theme-button-color, #38bdf8);
-        --button-text-color: var(--tg-theme-button-text-color, #ffffff);
-        --secondary-bg-color: var(--tg-theme-secondary-bg-color, #1e293b);
-        --card-bg: rgba(255, 255, 255, 0.03);
-        --border-color: rgba(255, 255, 255, 0.08);
+        --bg-color: #f8fafc;
+        --text-color: #0f172a;
+        --hint-color: #64748b;
+        --button-color: #8b5cf6;
+        --button-text-color: #ffffff;
+        --card-bg: rgba(255, 255, 255, 0.7);
+        --border-color: rgba(0, 0, 0, 0.06);
+        --accent-gradient: linear-gradient(135deg, #8b5cf6, #3b82f6);
         --success-color: #10b981;
-        --danger-color: #ef4444;
-        --accent-gradient: linear-gradient(135deg, #38bdf8, #818cf8);
-        --purple-gradient: linear-gradient(135deg, #a855f7, #6366f1);
       }
 
       * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -41,362 +37,298 @@
         padding: 24px 16px 100px;
         overscroll-behavior-y: none;
         line-height: 1.5;
-      }
-
-      h1, h2, h3 { margin-top: 0; font-weight: 700; }
-
-      .header {
         display: flex;
-        justify-content: space-between;
+        flex-direction: column;
         align-items: center;
-        margin-bottom: 32px;
+        min-height: 100vh;
       }
+
+      .auth-container {
+        width: 100%;
+        max-width: 400px;
+        text-align: center;
+        margin: auto;
+      }
+
+      .logo-wrap {
+        width: 80px;
+        height: 80px;
+        /* background: var(--accent-gradient); */ /* Removed as per instruction */
+        border-radius: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 24px;
+        box-shadow: 0 10px 25px rgba(56, 189, 248, 0.3);
+      }
+      .logo { font-size: 32px; font-weight: 800; color: white; }
 
       .title {
-        font-size: 28px;
+        font-size: 32px;
         font-weight: 800;
         background: var(--accent-gradient);
         -webkit-background-clip: text;
         background-clip: text;
         -webkit-text-fill-color: transparent;
-        letter-spacing: -1px;
+        margin-bottom: 8px;
       }
+      .subtitle { color: var(--hint-color); margin-bottom: 32px; font-size: 15px; }
 
-      #user-name {
-        font-weight: 600;
-        font-size: 14px;
-        background: rgba(255,255,255,0.05);
-        padding: 6px 12px;
-        border-radius: 12px;
-        color: var(--hint-color);
-        border: 1px solid var(--border-color);
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-      #user-name::before {
-        content: '';
-        width: 6px;
-        height: 6px;
-        background: var(--success-color);
-        border-radius: 50%;
-        box-shadow: 0 0 8px var(--success-color);
-      }
-
-      /* Stats Cards */
-      .stats-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-        margin-bottom: 32px;
-      }
-
-      .stat-card {
-        background-color: var(--card-bg);
-        border: 1px solid var(--border-color);
-        border-radius: 20px;
-        padding: 24px 16px;
-        text-align: center;
-        backdrop-filter: blur(10px);
-        box-shadow: 0 8px 32px rgba(0,0,0,0.2);
-      }
-
-      .stat-val {
-        font-size: 32px;
-        font-weight: 800;
-        margin-bottom: 4px;
-        color: var(--button-color);
-        letter-spacing: -1px;
-      }
-
-      .stat-label {
-        font-size: 11px;
-        color: var(--hint-color);
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        font-weight: 600;
-      }
-
-      /* General Sections */
-      .section {
-        background-color: var(--card-bg);
-        border: 1px solid var(--border-color);
-        border-radius: 20px;
-        padding: 20px;
-        margin-bottom: 24px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-      }
-
-      .section-title {
-        font-size: 14px;
-        margin-bottom: 16px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        font-weight: 700;
-        color: var(--hint-color);
-        text-transform: uppercase;
-        letter-spacing: 1px;
-      }
-
-      /* Form elements */
-      label {
-        display: block;
-        font-size: 12px;
-        color: var(--hint-color);
-        margin-bottom: 10px;
-        font-weight: 500;
-        line-height: 1.4;
-      }
-
-      textarea,
-      input[type="number"],
-      input[type="text"],
-      input[type="password"] {
+      .auth-form {
         width: 100%;
-        background-color: rgba(255, 255, 255, 0.03);
+        background: var(--card-bg);
         border: 1px solid var(--border-color);
-        color: var(--text-color);
+        border-radius: 28px;
+        padding: 32px;
+        backdrop-filter: blur(12px);
+        box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+      }
+      .auth-tabs {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 24px;
+        background: rgba(0,0,0,0.03);
+        padding: 6px;
+        border-radius: 16px;
+      }
+      .auth-tab {
+        flex: 1;
+        padding: 10px;
         border-radius: 12px;
-        padding: 14px;
-        font-family: inherit;
         font-size: 14px;
-        box-sizing: border-box;
-        outline: none;
+        font-weight: 600;
+        color: var(--hint-color);
+        cursor: pointer;
         transition: all 0.2s;
       }
-
-      textarea:focus,
-      input:focus {
-        border-color: var(--button-color);
-        background-color: rgba(255, 255, 255, 0.05);
-        box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
+      .auth-tab.active {
+        background: var(--button-color);
+        color: white;
       }
-
-      textarea { resize: vertical; min-height: 100px; }
-
-      /* Buttons */
-      .btn {
-        background: var(--accent-gradient);
-        color: var(--button-text-color);
-        border: none;
-        border-radius: 14px;
-        padding: 16px 20px;
-        font-weight: 700;
-        font-size: 15px;
+      .input-group { margin-bottom: 20px; text-align: left; }
+      .input-group label {
+        display: block;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--hint-color);
+        margin-bottom: 8px;
+        margin-left: 4px;
+      }
+      .input-group input {
         width: 100%;
-        cursor: pointer;
-        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        box-shadow: 0 4px 15px rgba(56, 189, 248, 0.2);
+        padding: 14px 18px;
+        background: rgba(0,0,0,0.02);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        color: var(--text-color);
+        font-size: 16px;
+        outline: none;
       }
+      .input-group input:focus { border-color: var(--button-color); background: #ffffff; box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15); }
 
-      .btn:active {
-        transform: scale(0.98);
-        opacity: 0.9;
+      .btn-primary {
+        width: 100%;
+        padding: 16px;
+        background: var(--accent-gradient);
+        border: none;
+        border-radius: 18px;
+        color: white;
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+        box-shadow: 0 8px 16px rgba(56, 189, 248, 0.2);
+      }
+      .btn-primary:active { transform: scale(0.98); }
+      .btn-primary.loading {
+        opacity: 0.7;
+        pointer-events: none;
+        position: relative;
+        color: transparent !important;
+      }
+      .btn-primary.loading::after {
+        content: "";
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        top: 50%;
+        left: 50%;
+        margin-top: -10px;
+        margin-left: -10px;
+        border: 3px solid rgba(0,0,0,0.1);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: btn-spin 0.6s linear infinite;
+      }
+      @keyframes btn-spin {
+        to { transform: rotate(360deg); }
       }
 
       .btn-secondary {
-        background: rgba(255, 255, 255, 0.05);
-        color: var(--text-color);
+        margin-top: 12px;
+        background: transparent;
         border: 1px solid var(--border-color);
-        box-shadow: none;
-      }
-      .btn-secondary:active { background: rgba(255, 255, 255, 0.1); }
-
-      /* Toggle switch */
-      .toggle-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-
-      .switch {
-        position: relative;
-        display: inline-block;
-        width: 50px;
-        height: 28px;
-      }
-
-      .switch input { opacity: 0; width: 0; height: 0; }
-
-      .slider {
-        position: absolute;
+        color: var(--hint-color);
+        font-size: 14px;
+        padding: 12px;
+        width: 100%;
+        border-radius: 16px;
         cursor: pointer;
-        top: 0; left: 0; right: 0; bottom: 0;
-        background-color: rgba(255, 255, 255, 0.1);
-        transition: 0.4s;
-        border-radius: 34px;
       }
 
-      .slider:before {
-        position: absolute;
-        content: "";
-        height: 22px;
-        width: 22px;
-        left: 3px;
-        bottom: 3px;
-        background-color: white;
-        transition: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        border-radius: 50%;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      /* Merge Modal */
+      #merge-backdrop {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.85); backdrop-filter: blur(10px);
+        z-index: 1000; display: none; justify-content: center; align-items: center; padding: 20px;
+      }
+      .merge-card {
+        background: #ffffff; border-radius: 28px; padding: 32px; width: 100%; max-width: 400px; text-align: center;
+        border: 1px solid rgba(0,0,0,0.05);
       }
 
+      /* Специфичные стили консоли после входа (мини-) */
+      #main-content { display: none; width: 100%; }
+      .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; width: 100%; }
+      #user-name { font-weight: 600; font-size: 14px; background: rgba(139, 92, 246, 0.05); padding: 6px 12px; border-radius: 12px; color: var(--button-color); border: 1px solid rgba(139, 92, 246, 0.1); }
+      .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px; width: 100%; }
+      .stat-card { background-color: var(--card-bg); border: 1px solid var(--border-color); border-radius: 20px; padding: 24px 16px; text-align: center; backdrop-filter: blur(12px); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03); }
+      .stat-val { font-size: 32px; font-weight: 800; margin-bottom: 4px; color: var(--button-color); }
+      .stat-label { font-size: 11px; color: var(--hint-color); text-transform: uppercase; letter-spacing: 1px; }
+      .section { background-color: var(--card-bg); border: 1px solid var(--border-color); border-radius: 20px; padding: 20px; margin-bottom: 24px; width: 100%; backdrop-filter: blur(12px); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03); }
+      .section-title { font-size: 14px; margin-bottom: 16px; font-weight: 700; color: var(--hint-color); text-transform: uppercase; }
+      textarea { width: 100%; background-color: rgba(0, 0, 0, 0.02); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 12px; padding: 14px; font-family: inherit; font-size: 14px; resize: vertical; min-height: 200px; outline: none; }
+      .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+      .switch input { opacity: 0; width: 0; height: 0; }
+      .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.1); transition: 0.4s; border-radius: 34px; }
+      .slider:before { position: absolute; content: ""; height: 22px; width: 22px; left: 3px; bottom: 3px; background-color: white; transition: 0.4s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
       input:checked + .slider { background: var(--success-color); }
       input:checked + .slider:before { transform: translateX(22px); }
-
-      /* CRM Section */
-      #crm-send-btn {
-        background: var(--purple-gradient);
-        margin-top: 12px;
-        box-shadow: 0 4px 15px rgba(168, 85, 247, 0.2);
+      .bottom-nav { position: fixed; bottom: 20px; left: 16px; right: 16px; background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(20px); border: 1px solid rgba(0, 0, 0, 0.05); border-radius: 24px; display: flex; justify-content: space-around; padding: 12px 8px; z-index: 100; box-shadow: 0 10px 40px rgba(0,0,0,0.06); }
+      .nav-item { display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--hint-color); text-decoration: none; font-size: 11px; font-weight: 600; flex: 1; }
+      .nav-item.active { 
+        color: var(--button-color); 
       }
-
-      .badge {
-        background-color: rgba(56, 189, 248, 0.1);
-        padding: 4px 10px;
-        border-radius: 10px;
-        font-size: 11px;
-        color: var(--button-color);
-        font-weight: 700;
-      }
-
-      /* Bottom Nav - Glassmorphism */
-      .bottom-nav {
-        position: fixed;
-        bottom: 20px; left: 16px; right: 16px;
-        background: rgba(30, 41, 59, 0.7);
-        backdrop-filter: blur(20px) saturate(180%);
-        -webkit-backdrop-filter: blur(20px) saturate(180%);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 24px;
-        display: flex;
-        justify-content: space-around;
-        padding: 12px 8px;
-        z-index: 100;
-        box-shadow: 0 15px 35px rgba(0,0,0,0.4);
-      }
-
-      .nav-item {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 6px;
-        color: var(--hint-color);
-        text-decoration: none;
-        font-size: 11px;
-        font-weight: 600;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        flex: 1;
-        position: relative;
-      }
-
-      .nav-item.active { color: var(--button-color); }
       .nav-icon { 
-        font-size: 24px; 
-        transition: transform 0.3s;
-      }
-      .nav-item.active .nav-icon {
-        transform: translateY(-4px);
-        filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.4));
-      }
-      .nav-item::after {
-        content: '';
-        position: absolute;
-        bottom: -4px;
-        width: 4px;
-        height: 4px;
-        border-radius: 50%;
-        background: var(--button-color);
-        opacity: 0;
-        transition: opacity 0.3s;
-      }
-      .nav-item.active::after { opacity: 1; }
-
-      /* Loading */
-      #loading {
-        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        background: var(--bg-color); z-index: 1000;
-        display: flex; justify-content: center; align-items: center;
-      }
-      .spinner {
-        width: 44px; height: 44px;
-        border: 3px solid rgba(56, 189, 248, 0.1);
-        border-top: 3px solid var(--button-color);
-        border-radius: 50%;
-        animation: spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-      }
-      @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-      /* Auth Modal */
-      #auth-backdrop {
-        position: fixed;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(0, 0, 0, 0.8);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        z-index: 500;
-        display: none;
+        width: 42px;
+        height: 42px;
+        display: flex;
         align-items: center;
         justify-content: center;
-        padding: 24px;
+        border-radius: 50%;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       }
-      #auth-screen {
-        background: #1e293b;
-        border: 1px solid var(--border-color);
+      .nav-item.active .nav-icon {
+        background: rgba(139, 92, 246, 0.1);
+        transform: translateY(-2px);
+      }
+      #auth-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 255, 255, 0.6); backdrop-filter: blur(16px); z-index: 500; display: none; align-items: center; justify-content: center; padding: 24px; }
+      #auth-screen { background: #ffffff; border: 1px solid var(--border-color); border-radius: 24px; padding: 32px 24px; text-align: center; width: 100%; max-width: 360px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.1); }
+      #qrcode-container { background: white; padding: 20px; border-radius: 24px; margin: 24px auto; display: flex; justify-content: center; align-items: center; width: fit-content; min-width: 200px; min-height: 200px; }
+      #qrcode-container img { max-width: 100%; height: auto !important; }
+      
+      /* Global App Loader */
+      #app-loader {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: var(--bg-color);
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        z-index: 9999;
+      }
+      .loader-logo {
+        width: 80px; height: 80px;
         border-radius: 24px;
-        padding: 32px 24px;
-        text-align: center;
-        width: 100%;
-        max-width: 360px;
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-        animation: modalIn 0.3s ease-out;
+        display: flex; align-items: center; justify-content: center;
+        margin-bottom: 24px;
+        animation: pulse 2s infinite;
       }
-      @keyframes modalIn {
-        from { transform: scale(0.9); opacity: 0; }
-        to   { transform: scale(1);    opacity: 1; }
+      @keyframes pulse {
+        0% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.05); opacity: 0.8; }
+        100% { transform: scale(1); opacity: 1; }
       }
     </style>
   </head>
 
   <body>
-    <!-- Auth Modal -->
+    <!-- App Loader -->
+    <div id="app-loader">
+      <div class="loader-logo">
+        <img src="/assets/logo.png" alt="MotionHunter" style="width: 100%; height: 100%; object-fit: contain; border-radius: 24px;" />
+      </div>
+      <div class="spinner"></div>
+    </div>
+
+    <!-- Auth Container -->
+    <div id="auth-container" class="auth-container" style="display: none;">
+      <div id="auth-view">
+        <div class="logo-wrap">
+          <div class="logo">
+            <img src="/assets/logo.png" alt="MotionHunter" style="width: 100%; height: 100%; object-fit: contain; border-radius: 24px;" />
+          </div>
+        </div>
+        <h1 class="title">MotionHunter</h1>
+        <p class="subtitle" id="auth-subtitle">Для использования в браузере</p>
+
+        <div class="auth-form" style="padding: 32px 24px;">
+          <p style="color: var(--hint-color); font-size: 14px; margin-bottom: 24px; line-height: 1.6;">
+            Безопасный вход без паролей.<br>Отсканируйте код через приложение Telegram на вашем телефоне.
+          </p>
+          <button class="btn-primary" onclick="showQRAuthScreen()">Показать QR-код</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Merge Modal -->
+    <div id="merge-backdrop">
+      <div class="merge-card">
+         <h2 style="margin-bottom: 16px;">Профиль найден!</h2>
+         <p style="color: var(--hint-color); margin-bottom: 24px;">
+           Номер <b id="merge-phone" style="color: white;"></b> уже зарегистрирован в системе.<br><br>
+           Вы хотите связать этот Telegram-аккаунт с существующим профилем?
+         </p>
+         <button class="btn-primary" onclick="confirmMerge()">Да, связать профили</button>
+         <button class="btn-secondary" onclick="location.reload()">Отмена</button>
+      </div>
+    </div>
+
+    <!-- Auth Modal (Legacy QR/2FA) -->
     <div id="auth-backdrop">
       <div id="auth-screen">
         <div class="title" style="font-size: 22px; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 10px;">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--button-color)"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           Авторизация
         </div>
         <div class="instructions" id="auth-instructions">Подготовка...</div>
-        <div id="qrcode-container" style="background:white; padding:16px; border-radius:16px; margin:20px 0;"></div>
+        <div id="qrcode-container"></div>
+        <div class="qr-timer-container" id="qr-timer-wrapper" style="display: none;">
+          Обновление через: <span id="qr-timer-val">30</span>с
+        </div>
         <div id="password-input-container" style="display: none;">
           <label>Введите 2FA пароль:</label>
           <input type="password" id="2fa-password" style="margin-bottom: 16px" placeholder="Ваш пароль" />
-          <button class="btn" onclick="submit2FA()">Подтвердить</button>
+          <button class="btn-primary" onclick="submit2FA()">Подтвердить</button>
         </div>
+        <button class="btn-secondary" onclick="document.getElementById('auth-backdrop').style.display='none'">Закрыть</button>
       </div>
     </div>
 
-    <div id="loading"><div class="spinner"></div></div>
+    <!-- Main Content (Hidden until auth) -->
+    <div id="main-content">
+      <div id="loading"><div class="spinner"></div></div>
 
-    <div class="header">
-      <div class="title">MotionHunter</div>
-      <div id="user-name">User</div>
-    </div>
-
-    <div class="section toggle-row">
-      <div>
-        <div style="font-weight: 700; font-size: 17px; margin-bottom: 4px">Рассылка</div>
-        <div style="font-size: 13px; color: var(--hint-color)">Поиск заказов в каналах</div>
+      <div class="header">
+        <div class="title">MotionHunter</div>
+        <div id="user-name">Пользователь</div>
       </div>
-      <label class="switch">
-        <input type="checkbox" id="power-toggle" />
-        <span class="slider"></span>
-      </label>
-    </div>
+
+      <div class="section toggle-row">
+        <div>
+          <div style="font-weight: 700; font-size: 17px; margin-bottom: 4px">Поиск заказов</div>
+          <div style="font-size: 13px; color: var(--hint-color)">Автоматический парсинг каналов</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="power-toggle" />
+          <span class="slider"></span>
+        </label>
+      </div>
 
     <div class="stats-grid">
       <div class="stat-card">
@@ -429,18 +361,20 @@
       <button class="btn btn-secondary" style="margin-top: 12px" onclick="saveConfig()">Сохранить слова</button>
     </div>
 
-    <div class="section" style="border: 1px solid rgba(168, 85, 247, 0.3); background: rgba(168, 85, 247, 0.02);">
+    <div class="section" style="border: 1px solid rgba(139, 92, 246, 0.2); background: rgba(139, 92, 246, 0.02); box-shadow: 0 10px 30px rgba(139, 92, 246, 0.05);">
       <div class="section-title">
-        <div style="display: flex; align-items: center; gap: 8px; background: var(--purple-gradient); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: #a855f7;"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.71.79-1.81.79-1.81l-1.98-1.98s-1.1.08-1.81.79Z"/><path d="M15 8.5c.07-.07.11-.17.14-.28.19-.58.11-1.17-.4-1.69l-.17-.11c-.52-.51-1.11-.59-1.69-.4-.11.03-.21.07-.28.14l-1.14 1.14c-.1.1-.14.2-.17.3q-.12.42.11.83l.21.32c.1.15.2.25.32.32q.41.23.83.11c.1-.03.2-.07.3-.17Z"/><path d="M10 10l-1.5 1.5"/><path d="M13 13l-1.5 1.5"/><path d="M16 16l-1.5 1.5"/><path d="M21 3s-9 1-13 11l-2 2 5 5 2-2c10-4 11-13 11-13Z"/></svg>
-          Массовая рассылка
+        <div style="display: flex; align-items: center; gap: 8px; background: var(--accent-gradient); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: #8b5cf6;"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.71.79-1.81.79-1.81l-1.98-1.98s-1.1.08-1.81.79Z"/><path d="M15 8.5c.07-.07.11-.17.14-.28.19-.58.11-1.17-.4-1.69l-.17-.11c-.52-.51-1.11-.59-1.69-.4-.11.03-.21.07-.28.14l-1.14 1.14c-.1.1-.14.2-.17.3q-.12.42.11.83l.21.32c.1.15.2.25.32.32q.41.23.83.11c.1-.03.2-.07.3-.17Z"/><path d="M10 10l-1.5 1.5"/><path d="M13 13l-1.5 1.5"/><path d="M16 16l-1.5 1.5"/><path d="M21 3s-9 1-13 11l-2 2 5 5 2-2c10-4 11-13 11-13Z"/></svg>
+          Расширенная рассылка
         </div>
       </div>
       <label>Количество контактов:</label>
-      <input type="number" id="crm-limit" value="50" style="margin-bottom: 16px" />
+      <input type="number" id="crm-limit" value="50" style="margin-bottom: 16px; width: 100%; border-radius: 12px; border: 1px solid var(--border-color); background: rgba(0, 0, 0, 0.02); color: var(--text-color); padding: 12px 16px; outline: none; font-size: 15px; box-sizing: border-box; transition: 0.2s;" />
+
       <label>Текст сообщения:</label>
       <textarea id="crm-text" placeholder="Текст для всех контактов в CRM базе..."></textarea>
-      <button class="btn" id="crm-send-btn" onclick="startMassMailing()">Запустить рассылку</button>
+      
+      <button class="btn btn-primary" id="crm-send-btn" onclick="startMassMailing()" style="margin-top: 16px; width: 100%;">Запустить рассылку</button>
     </div>
 
     <div class="bottom-nav">
@@ -466,12 +400,15 @@
 
     <script>
       const tg = window.Telegram.WebApp;
-      tg.expand();
+      if (tg) tg.expand();
 
       const API_BASE = "";
-      let userId = localStorage.getItem("user_id");
       let webToken = localStorage.getItem("web_token");
       let initData = tg.initData || "";
+      let userId = tg.initDataUnsafe?.user?.id || null;
+      let _currentSessionId = null;
+      let _qrInterval = null;
+      let _timerInterval = null;
 
       const powerToggle = document.getElementById("power-toggle");
       const replyText = document.getElementById("reply-text");
@@ -480,21 +417,7 @@
       const statCrm = document.getElementById("stat-crm-size");
       const crmLimit = document.getElementById("crm-limit");
 
-      // Если в Mini App
-      if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
-        userId = tg.initDataUnsafe.user.id;
-        document.getElementById("user-name").innerText = tg.initDataUnsafe.user.first_name || "User";
-      } else if (userId && webToken) {
-        // Если в браузере и есть токен
-        document.getElementById("user-name").innerText = "User " + userId;
-      } else {
-        // Если в браузере и НЕТ токена - показываем экран входа
-        document.getElementById("user-name").innerText = "Гость";
-        setTimeout(() => {
-            document.getElementById("loading").style.display = "none";
-            showQRAuthScreen();
-        }, 100);
-      }
+
 
       function getAuthHeaders() {
           const headers = { "Content-Type": "application/json" };
@@ -503,92 +426,106 @@
           return headers;
       }
 
+      function hideAppLoader() {
+        const loader = document.getElementById("app-loader");
+        if (loader) {
+          loader.style.opacity = "0";
+          setTimeout(() => loader.remove(), 400);
+        }
+      }
+
+      async function checkAuth() {
+        // Если мы в Mini App - пробуем сразу загрузить состояние
+        if (initData) {
+            await fetchState();
+            return;
+        }
+        // Если в браузере и есть токен
+        if (webToken) {
+            await fetchState();
+            return;
+        }
+        // Иначе показываем форму входа
+        document.getElementById("auth-container").style.display = "block";
+        document.getElementById("main-content").style.display = "none";
+        hideAppLoader();
+      }
+
       async function fetchState() {
-        if (!userId && !webToken && !initData) return;
         try {
-          const res = await fetch(`${API_BASE}/api/state?uid=${userId}`, {
+          const res = await fetch(`${API_BASE}/api/state`, {
             headers: getAuthHeaders(),
           });
           const data = await res.json();
 
-          if (!res.ok || data.error) {
-            if (res.status === 404) { showQRAuthScreen(); return; }
-            tg.showAlert(data.error);
+          if (!res.ok) {
+            if (res.status === 401 || res.status === 404) {
+                // Если не авторизован - показываем форму входа (только для веба)
+                if (!initData) {
+                    localStorage.removeItem("web_token");
+                    document.getElementById("auth-container").style.display = "block";
+                    document.getElementById("main-content").style.display = "none";
+                } else {
+                    // В Mini App показываем QR для первой привязки, если аккаунта нет вообще
+                    showQRAuthScreen();
+                }
+                hideAppLoader();
+                return;
+            }
+            if (tg.showAlert) tg.showAlert(data.error);
+            hideAppLoader();
             return;
           }
 
+          document.getElementById("auth-container").style.display = "none";
+          document.getElementById("main-content").style.display = "block";
+          document.getElementById("loading").style.display = "none";
+          hideAppLoader();
+          
+          document.getElementById("user-name").innerText = data.name || (userId ? "Пользователь " + userId : "Профиль");
           powerToggle.checked = data.enabled || false;
           replyText.value = data.reply_text || "";
           keywordsText.value = (data.keywords || []).join(", ");
-          statSent.innerText = data.daily_stats?.sent || 0;
-          statCrm.innerText = (data.mailing_list || []).length;
-          crmLimit.value = data.mail_limit || 50;
+          statSent.innerText = (data.daily_stats && data.daily_stats.sent) || 0;
+          
+          const contactsCount = (data.mailing_list || []).length;
+          statCrm.innerText = contactsCount;
+          
+          // Синхронизация лимита: если контактов меньше, чем сохраненный лимит, показываем реально доступное кол-во
+          const savedLimit = data.mail_limit || 50;
+          crmLimit.value = contactsCount < savedLimit ? contactsCount : savedLimit;
 
-          document.getElementById("loading").style.display = "none";
         } catch (e) {
-          tg.showAlert("Ошибка подключения");
+          console.error(e);
+          if (tg.showAlert) tg.showAlert("Ошибка подключения");
         }
       }
 
-      async function saveConfig() {
-        tg.HapticFeedback.impactOccurred("light");
-        const btn = event.target;
-        const oldText = btn.innerText;
-        btn.innerText = "⏳...";
 
-        try {
-          const res = await fetch(`${API_BASE}/api/update`, {
-            method: "POST",
-            headers: getAuthHeaders(),
-            body: JSON.stringify({
-              uid: userId.toString(),
-              enabled: powerToggle.checked,
-              reply_text: replyText.value,
-              keywords: keywordsText.value.split(",").map(k => k.trim()).filter(k => k),
-              mail_limit: parseInt(crmLimit.value) || 50,
-            }),
-          });
-          if (res.ok) {
-            btn.innerText = "✅ Готово";
-            setTimeout(() => btn.innerText = oldText, 2000);
-          }
-        } catch (e) {
-          tg.showAlert("Ошибка сохранения");
-          btn.innerText = "❌";
-        }
-      }
 
-      async function startMassMailing() {
-        const text = document.getElementById("crm-text").value.trim();
-        if (!text) { tg.showAlert("Введите текст!"); return; }
-
-        tg.showConfirm(`Рассылка на ${crmLimit.value} чел.?`, async (ok) => {
-          if (!ok) return;
-          const btn = document.getElementById("crm-send-btn");
-          btn.disabled = true;
+      async function confirmMerge() {
           try {
-            const res = await fetch(`${API_BASE}/api/mail`, {
-              method: "POST",
-              headers: getAuthHeaders(),
-              body: JSON.stringify({ uid: userId.toString(), text }),
-            });
-            if (res.ok) {
-                tg.showAlert("Рассылка запущена!");
-                document.getElementById("crm-text").value = "";
-            } else {
-                const r = await res.json();
-                tg.showAlert(r.error);
-            }
-          } catch (e) { tg.showAlert("Сбой"); }
-          finally { btn.disabled = false; fetchState(); }
-        });
+              const res = await fetch(`${API_BASE}/api/qr_merge`, {
+                  method: "POST",
+                  headers: getAuthHeaders(),
+                  body: JSON.stringify({ session_id: _currentSessionId })
+              });
+              const data = await res.json();
+              if (res.ok) {
+                  document.getElementById('merge-backdrop').style.display = 'none';
+                  // Ожидаем успеха в pollQRStatus
+              } else alert(data.error);
+          } catch(e) { alert("Ошибка слияния"); }
       }
 
       async function showQRAuthScreen() {
+          if (_qrInterval) clearInterval(_qrInterval);
+          if (_timerInterval) clearInterval(_timerInterval);
+
           document.getElementById("auth-backdrop").style.display = "flex";
-          document.getElementById("loading").style.display = "none";
           document.getElementById("qrcode-container").style.display = "block";
           document.getElementById("password-input-container").style.display = "none";
+          document.getElementById("qr-timer-wrapper").style.display = "none";
           document.getElementById("auth-instructions").innerText = "Подготовка...";
           
           try {
@@ -600,38 +537,69 @@
             const data = await res.json();
             const qrContainer = document.getElementById("qrcode-container");
             qrContainer.innerHTML = "";
-            new QRCode(qrContainer, { text: data.url, width: 220, height: 220 });
-            document.getElementById("auth-instructions").innerHTML = "Отсканируйте код в <b>Устройства ➡️ Подключить</b>";
-          pollQRStatus(data.session_id);
+            new QRCode(qrContainer, { text: data.url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.H });
+            document.getElementById("auth-instructions").innerHTML = "Отсканируйте код в <b>Настройки ➡️ Устройства</b>";
+            document.getElementById("qr-timer-wrapper").style.display = "flex";
+            
+            startCountdown(30);
+            pollQRStatus(data.session_id);
         } catch (e) {
              document.getElementById("auth-instructions").innerText = "Ошибка загрузки QR";
         }
       }
 
-      let _currentSessionId = null;
+      function startCountdown(seconds) {
+        let left = seconds;
+        const display = document.getElementById("qr-timer-val");
+        display.innerText = left;
+        if (_timerInterval) clearInterval(_timerInterval);
+        _timerInterval = setInterval(() => {
+          left--;
+          display.innerText = left;
+          if (left <= 0) {
+            clearInterval(_timerInterval);
+            showQRAuthScreen();
+          }
+        }, 1000);
+      }
+
       function pollQRStatus(id) {
         _currentSessionId = id;
-        const interval = setInterval(async () => {
-          const res = await fetch(`${API_BASE}/api/qr_status`, {
-            method: "POST",
-            headers: getAuthHeaders(),
-            body: JSON.stringify({ session_id: id }),
-          });
-          const data = await res.json();
-          if (data.status === "success") { 
-            clearInterval(interval); 
-            if (data.web_token) {
-               localStorage.setItem("web_token", data.web_token);
-               localStorage.setItem("user_id", data.uid);
+        if (_qrInterval) clearInterval(_qrInterval);
+        _qrInterval = setInterval(async () => {
+          try {
+            const res = await fetch(`${API_BASE}/api/qr_status`, {
+              method: "POST",
+              headers: getAuthHeaders(),
+              body: JSON.stringify({ session_id: id }),
+            });
+            const data = await res.json();
+            if (data.status === "success") { 
+              clearInterval(_qrInterval); 
+              clearInterval(_timerInterval);
+              if (data.web_token) localStorage.setItem("web_token", data.web_token);
+              location.reload(); 
             }
-            location.reload(); 
-          }
-          else if (data.status === "2fa_required") {
-            clearInterval(interval);
-            document.getElementById("qrcode-container").style.display = "none";
-            document.getElementById("auth-instructions").innerText = "Введите пароль 2FA:";
-            document.getElementById("password-input-container").style.display = "block";
-          }
+            else if (data.status === "merge_required") {
+              clearInterval(_qrInterval);
+              clearInterval(_timerInterval);
+              document.getElementById('merge-phone').innerText = data.phone;
+              document.getElementById('merge-backdrop').style.display = 'flex';
+              document.getElementById('auth-backdrop').style.display = 'none';
+            }
+            else if (data.status === "2fa_required") {
+              clearInterval(_qrInterval);
+              clearInterval(_timerInterval);
+              document.getElementById("qrcode-container").style.display = "none";
+              document.getElementById("qr-timer-wrapper").style.display = "none";
+              document.getElementById("auth-instructions").innerText = "Введите пароль 2FA:";
+              document.getElementById("password-input-container").style.display = "block";
+            }
+            else if (data.status === "failed") {
+              clearInterval(_qrInterval);
+              showQRAuthScreen();
+            }
+          } catch(e) { console.error("Poll error", e); }
         }, 3000);
       }
 
@@ -645,18 +613,55 @@
         });
         const data = await res.json();
         if (data.status === "success") {
-            if (data.web_token) {
-               localStorage.setItem("web_token", data.web_token);
-               localStorage.setItem("user_id", data.uid);
-            }
+            if (data.web_token) localStorage.setItem("web_token", data.web_token);
             location.reload();
-        } else tg.showAlert("Неверный пароль");
+        } else alert("Неверный пароль");
+      }
+
+      async function saveConfig() {
+        if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
+        const btn = event.target;
+        const oldText = btn.innerText;
+        btn.innerText = "⏳...";
+        try {
+          const res = await fetch(`${API_BASE}/api/update`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({
+              enabled: powerToggle.checked,
+              reply_text: replyText.value,
+              keywords: keywordsText.value.split(",").map(k => k.trim()).filter(k => k),
+              mail_limit: parseInt(crmLimit.value) || 50,
+            }),
+          });
+          if (res.ok) {
+            btn.innerText = "✅ Готово";
+            setTimeout(() => btn.innerText = oldText, 2000);
+          }
+        } catch (e) { btn.innerText = "❌"; }
+      }
+
+      async function startMassMailing() {
+        const text = document.getElementById("crm-text").value.trim();
+        if (!text) return alert("Введите текст!");
+        if (confirm(`Запустить рассылку?`)) {
+          const btn = document.getElementById("crm-send-btn");
+          btn.disabled = true;
+          try {
+            const res = await fetch(`${API_BASE}/api/mail`, {
+              method: "POST",
+              headers: getAuthHeaders(),
+              body: JSON.stringify({ text }),
+            });
+            if (res.ok) alert("Рассылка запущена!");
+            else { const r = await res.json(); alert(r.error); }
+          } catch (e) { alert("Сбой"); }
+          finally { btn.disabled = false; fetchState(); }
+        }
       }
 
       powerToggle.addEventListener("change", saveConfig);
-      fetchState();
+      checkAuth();
     </script>
-  </body>
-</html>
   </body>
 </html>
