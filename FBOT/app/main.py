@@ -363,16 +363,16 @@ def make_watcher_handler(uid_str: str):
                 final = "sent"
                 
                 # Сохраняем статистику и добавляем в базу рассылки
-                today_str = datetime.now().strftime("%Y-%m-%d")
+                today_str = str(datetime.now().date())
                 
                 # Fetch fresh data for update
                 current_u_data = await db.get_user(uid_str)
                 if current_u_data:
-                    current_daily_date = current_u_data.get("daily_date")
+                    current_daily_date = current_u_data.get("daily_date", "")
                     current_daily_sent = current_u_data.get("daily_sent", 0)
                     
                     if current_daily_date != today_str:
-                        await db.update_user_field(uid_str, "daily_date", today_str)
+                        await db.update_user_field(uid_str, "daily_date", datetime.now().date())
                         await db.update_user_field(uid_str, "daily_sent", 1)
                     else:
                         await db.update_user_field(uid_str, "daily_sent", current_daily_sent + 1)
@@ -658,7 +658,7 @@ async def finalize_login(user_id: int):
         "keywords": DEFAULT_KEYWORDS.copy(),
         "negative_words": DEFAULT_NEGATIVE_WORDS.copy(),
         "daily_sent": 0,
-        "daily_date": datetime.now().strftime("%Y-%m-%d"),
+        "daily_date": datetime.now().date(),
         "mail_limit": 50
     }
     await db.upsert_user(uid_str, user_db_data)
@@ -1118,6 +1118,8 @@ async def api_qr_status(request):
             
         status = w_session["status"]
         if status == "success":
+            # Extract and remove immediately to prevent race conditions on double polling
+            w_session = webapp_qr_sessions.pop(session_id)
             uid = w_session["uid"]
             client = w_session["client"]
             
@@ -1144,7 +1146,7 @@ async def api_qr_status(request):
                 "keywords": DEFAULT_KEYWORDS.copy(),
                 "negative_words": DEFAULT_NEGATIVE_WORDS.copy(),
                 "daily_sent": 0,
-                "daily_date": datetime.now().strftime("%Y-%m-%d"),
+                "daily_date": datetime.now().date(),
                 "mail_limit": 50
             }
             await db.upsert_user(uid_str, user_db_data)
@@ -1177,8 +1179,6 @@ async def api_qr_status(request):
             await new_client.connect()
             user_clients[uid_str] = new_client
             new_client.add_event_handler(make_watcher_handler(uid_str), events.NewMessage())
-            
-            del webapp_qr_sessions[session_id]
             
             resp = {
                 "status": "success",
@@ -1237,7 +1237,8 @@ async def api_get_state(request):
         return web.json_response({"error": "Unauthorized"}, status=401)
 
     udata = await db.get_user(uid_str)
-    if not udata: return web.json_response({"error": "User not registered"}, status=404)
+    if not udata: 
+        return web.json_response({"error": "User not registered", "registered": False}, status=200)
     
     # Попытаемся обновить аватарку в ответе
     avatar_url = await download_user_avatar(uid_str)
