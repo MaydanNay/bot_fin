@@ -1280,12 +1280,13 @@ async def handle_profile(request):
 
 @routes.get("/api/profile")
 async def api_get_profile(request):
-    uid_str = await get_auth_user_id(request)
+    uid_str = request.query.get("uid") or await get_auth_user_id(request)
     if not uid_str:
         return web.json_response({"error": "Unauthorized"}, status=401)
     
     udata = await db.get_user(uid_str)
-    if not udata: return web.json_response({"error": "User not registered"}, status=404)
+    if not udata: 
+        return web.json_response({"error": "User not registered", "registered": False}, status=200)
 
     name = udata.get("name")
     username = udata.get("username")
@@ -1340,12 +1341,13 @@ async def api_get_profile(request):
 
 @routes.get("/api/crm")
 async def api_crm_list(request):
-    uid_str = await get_auth_user_id(request)
+    uid_str = request.query.get("uid") or await get_auth_user_id(request)
     if not uid_str:
         return web.json_response({"error": "Unauthorized"}, status=401)
 
     udata = await db.get_user(uid_str)
-    if not udata: return web.json_response({"error": "User not registered"}, status=404)
+    if not udata: 
+        return web.json_response({"error": "User not registered", "registered": False}, status=200)
 
     q = request.query.get("q", "").strip()
     ml = await db.get_crm_contacts(uid_str, query=q)
@@ -1383,41 +1385,70 @@ async def api_crm_add(request):
 
 @routes.post("/api/crm/collect")
 async def api_crm_collect(request):
+    uid_str = request.query.get("uid") or await get_auth_user_id(request)
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    
     try:
         data = await request.json()
-        uid = str(data.get("uid", ""))
+    except: data = {}
+    
+    # uid_str from body has higher priority if exists
+    uid_str = data.get("uid", uid_str)
         
-        phone = await uid_to_phone(uid) if (data.get("role") != "web" and len(str(uid)) < 20) else uid
-        
-        user_uid_str = ""
-        uids = await db.get_all_uids()
-        for u in uids:
-            udata = await db.get_user(u)
-            if udata and udata.get("phone") == phone:
-                user_uid_str = str(u)
-                break
-                
-        if not user_uid_str:
-             return web.json_response({"error": "Аккаунт не привязан"}, status=404)
-        
-        client = user_clients.get(user_uid_str)
-        if not client:
-             return web.json_response({"error": "Telegram клиент оффлайн"}, status=400)
-             
-        contacts = []
+    client = user_clients.get(str(uid_str))
+    if not client:
+        return web.json_response({"error": "Юзербот оффлайн. Подключите его через /start"}, status=400)
+    
+    added = 0
+    contacts = []
+    try:
         async for dialog in client.iter_dialogs(limit=None):
             if dialog.is_user and not dialog.entity.bot:
-                if dialog.entity.username: contacts.append(f"@{dialog.entity.username}")
-                elif dialog.entity.phone: contacts.append(f"+{dialog.entity.phone}")
-                else: contacts.append(str(dialog.entity.id))
-                
+                if getattr(dialog.entity, "username", None):
+                    contacts.append(f"@{dialog.entity.username}")
+                elif getattr(dialog.entity, "phone", None):
+                    contacts.append(f"+{dialog.entity.phone}")
+                else:
+                    contacts.append(str(dialog.entity.id))
+        
         if contacts:
-            await db.add_crm_contacts(phone, contacts)
+            await db.add_crm_contacts(str(uid_str), contacts)
+            added = len(set(contacts))
             
-        return web.json_response({"status": "ok", "added": len(contacts)})
+        return web.json_response({"status": "ok", "added": added})
     except Exception as e:
-         log.error(f"Error api_crm_collect: {e}")
-         return web.json_response({"error": str(e)}, status=500)
+        log.error(f"CRM Collect error: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+@routes.get("/api/audit")
+async def api_get_audit(request):
+    uid_str = request.query.get("uid") or await get_auth_user_id(request)
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+        
+    try:
+        udata = await db.get_user(uid_str)
+        if not udata: 
+            return web.json_response({"error": "User not registered"}, status=200)
+            
+        # Чтение логов пользователя из AUDIT_FILE
+        records = []
+        if os.path.exists(AUDIT_FILE):
+            with open(AUDIT_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    if not line.strip(): continue
+                    try:
+                        record = json.loads(line)
+                        if str(record.get("uid")) == str(uid_str):
+                            records.append(record)
+                    except: pass
+        
+        records.reverse()
+        return web.json_response({"records": records[:100]})
+    except Exception as e:
+        log.error(f"Audit API error: {e}")
+        return web.json_response({"error": str(e)}, status=500)
 
 @routes.post("/api/crm/delete")
 async def api_crm_delete(request):

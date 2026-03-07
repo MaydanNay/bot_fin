@@ -8,13 +8,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <style>
       :root {
-        --bg-color: var(--tg-theme-bg-color, #f8fafc);
-        --text-color: var(--tg-theme-text-color, #0f172a);
-        --hint-color: var(--tg-theme-hint-color, #64748b);
-        --button-color: var(--tg-theme-button-color, #8b5cf6);
-        --button-text-color: var(--tg-theme-button-text-color, #ffffff);
-        --secondary-bg-color: var(--tg-theme-secondary-bg-color, #f1f5f9);
-        --card-bg: rgba(255, 255, 255, 0.7);
+        --bg-color: #f9f6f0;
+        --text-color: #2a2826;
+        --hint-color: #8c847d;
+        --button-color: #8b5cf6;
+        --button-text-color: #ffffff;
+        --secondary-bg-color: #eee9dd;
+        --card-bg: rgba(255, 255, 255, 0.75);
         --border-color: rgba(0, 0, 0, 0.06);
         --success-color: #10b981;
         --danger-color: #ef4444;
@@ -42,7 +42,7 @@
         border-bottom: 1px solid var(--border-color);
         position: sticky;
         top: 0;
-        background: rgba(248, 250, 252, 0.85);
+        background: rgba(249, 246, 240, 0.85); /* Кость */
         backdrop-filter: blur(20px);
         -webkit-backdrop-filter: blur(20px);
         z-index: 100;
@@ -307,20 +307,20 @@
       }
       #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-      /* Bottom Nav - Glassmorphism */
+      /* Bottom Nav - Glassmorphism Light */
       .bottom-nav {
         position: fixed;
         bottom: 20px; left: 16px; right: 16px;
-        background: rgba(30, 41, 59, 0.7);
+        background: rgba(255, 255, 255, 0.8);
         backdrop-filter: blur(20px) saturate(180%);
         -webkit-backdrop-filter: blur(20px) saturate(180%);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.5);
         border-radius: 24px;
         display: flex;
         justify-content: space-around;
         padding: 12px 8px;
         z-index: 100;
-        box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+        box-shadow: 0 15px 35px rgba(0,0,0,0.06);
       }
 
       .nav-item {
