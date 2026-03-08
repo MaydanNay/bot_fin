@@ -806,9 +806,9 @@ async def cmd_user_collect_dialogs(event):
         my_id = str((await client.get_me()).id)
         contacts = [c for c in contacts if str(c) != my_id]
         
-        await db.add_crm_contacts(uid_str, contacts)
+        added_count = await db.add_crm_contacts(uid_str, contacts)
         count = await db.get_crm_count(uid_str)
-        await msg.edit(f"✅ Сбор завершен!\nНайдено новых личных переписок: {len(contacts)}\nВсего в CRM базе: {count} контактов.")
+        await msg.edit(f"✅ Сбор завершен!\nНайдено новых личных переписок: {added_count}\nВсего в CRM базе: {count} контактов.")
     except Exception as e:
         log.error(f"Error collecting dialogs for {uid_str}: {e}")
         await msg.edit(f"❌ Произошла ошибка при сборе диалогов: {e}")
@@ -1249,7 +1249,7 @@ async def api_get_state(request):
         return web.json_response({"error": "Unauthorized"}, status=401)
 
     udata = await db.get_user(uid_str)
-    if not udata: 
+    if not udata or not udata.get("session_string"): 
         return web.json_response({"error": "User not registered", "registered": False}, status=200)
     
     # Попытаемся обновить аватарку в ответе
@@ -1297,7 +1297,7 @@ async def api_get_profile(request):
         return web.json_response({"error": "Unauthorized"}, status=401)
     
     udata = await db.get_user(uid_str)
-    if not udata: 
+    if not udata or not udata.get("session_string"): 
         return web.json_response({"error": "User not registered", "registered": False}, status=200)
 
     name = udata.get("name")
@@ -1358,7 +1358,7 @@ async def api_crm_list(request):
         return web.json_response({"error": "Unauthorized"}, status=401)
 
     udata = await db.get_user(uid_str)
-    if not udata: 
+    if not udata or not udata.get("session_string"): 
         return web.json_response({"error": "User not registered", "registered": False}, status=200)
 
     q = request.query.get("q", "").strip()
@@ -1388,10 +1388,10 @@ async def api_crm_add(request):
         user_data = await db.get_user(uid_str)
         if not user_data: return web.json_response({"error": "Not registered"}, status=404)
         
-        await db.add_crm_contacts(uid_str, contacts_to_add)
+        added = await db.add_crm_contacts(uid_str, contacts_to_add)
         total = await db.get_crm_count(uid_str)
         
-        return web.json_response({"status": "ok", "total": total})
+        return web.json_response({"status": "ok", "added": added, "total": total})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
@@ -1425,8 +1425,7 @@ async def api_crm_collect(request):
                     contacts.append(str(dialog.entity.id))
         
         if contacts:
-            await db.add_crm_contacts(str(uid_str), contacts)
-            added = len(set(contacts))
+            added = await db.add_crm_contacts(str(uid_str), contacts)
             
         return web.json_response({"status": "ok", "added": added})
     except Exception as e:

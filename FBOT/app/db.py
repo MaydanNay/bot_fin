@@ -211,18 +211,29 @@ async def update_user_field(uid: str, field: str, value: Any):
 
 # --- CRM ---
 
-async def add_crm_contacts(uid: str, contacts: List[Any]):
-    if not pool: return
+async def add_crm_contacts(uid: str, contacts: List[Any]) -> int:
+    if not pool: return 0
     
-    unique_contacts = list(set([str(c) for c in contacts]))
-    if not unique_contacts: return
+    unique_contacts = list(set([str(c).strip() for c in contacts if str(c).strip()]))
+    if not unique_contacts: return 0
     
     async with pool.acquire() as conn:
         try:
-            data = [(uid, c) for c in unique_contacts]
-            await conn.executemany("INSERT INTO crm_contacts (uid, contact) VALUES ($1, $2) ON CONFLICT (uid, contact) DO NOTHING", data)
+            # Используем unnest для вставки всех контактов одним запросом
+            # Это позволяет получить количество РЕАЛЬНО вставленных строк (те, что не попали под ON CONFLICT)
+            status = await conn.execute("""
+                INSERT INTO crm_contacts (uid, contact)
+                SELECT $1, unnest($2::text[])
+                ON CONFLICT (uid, contact) DO NOTHING
+            """, uid, unique_contacts)
+            
+            # status имеет формат "INSERT 0 5", где 5 - количество вставленных строк
+            if status and status.startswith("INSERT "):
+                return int(status.split()[-1])
+            return 0
         except Exception as e:
             log.error(f"Error bulk inserting crm contacts: {e}")
+            return 0
 
 async def delete_crm_contact(uid: str, contact: Any):
     if not pool: return
