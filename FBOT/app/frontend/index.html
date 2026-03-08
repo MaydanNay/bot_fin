@@ -535,8 +535,23 @@
               body: JSON.stringify({ uid: userId }),
             });
             const data = await res.json();
+            console.log("QR Login Response:", data);
+            
+            if (!data.url || !data.session_id) {
+                console.error("Invalid QR Login Data:", data);
+                document.getElementById("auth-instructions").innerText = "Ошибка сервера: неполные данные";
+                return;
+            }
+
             const qrContainer = document.getElementById("qrcode-container");
             qrContainer.innerHTML = "";
+            
+            if (typeof QRCode === 'undefined') {
+                console.error("QRCode library NOT loaded!");
+                document.getElementById("auth-instructions").innerText = "Ошибка: библиотека QR не загружена";
+                return;
+            }
+            
             new QRCode(qrContainer, { text: data.url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.H });
             document.getElementById("auth-instructions").innerHTML = "Отсканируйте код в <b>Настройки ➡️ Устройства</b>";
             document.getElementById("qr-timer-wrapper").style.display = "flex";
@@ -574,7 +589,10 @@
               body: JSON.stringify({ session_id: id }),
             });
             const data = await res.json();
+            if (data.error) console.warn("QR Poll Error detail:", data);
+
             if (data.status === "success") { 
+              console.log("QR Login Successful!");
               clearInterval(_qrInterval); 
               clearInterval(_timerInterval);
               if (data.web_token) localStorage.setItem("web_token", data.web_token);

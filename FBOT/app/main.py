@@ -1074,7 +1074,8 @@ async def api_qr_login(request):
         qr = await client.qr_login()
         
         # Генерируем ID сессии авторизации
-        session_id = f"qr_{sender_id}_{int(datetime.now().timestamp())}"
+        session_id = uuid.uuid4().hex
+        log.info(f"Generated new QR session_id: {session_id} for UID: {sender_id}")
         webapp_qr_sessions[session_id] = {
             "client": client,
             "qr": qr,
@@ -1125,7 +1126,9 @@ async def api_qr_status(request):
         data = await request.json()
         session_id = data.get("session_id")
         w_session = webapp_qr_sessions.get(session_id)
+        
         if not w_session:
+            log.warning(f"QR Session {session_id} NOT FOUND in webapp_qr_sessions. Available: {list(webapp_qr_sessions.keys())}")
             return web.json_response({"error": "Session not found"}, status=404)
             
         status = w_session["status"]
@@ -1227,6 +1230,7 @@ async def api_2fa_login(request):
         
         w_session = webapp_qr_sessions.get(session_id)
         if not w_session:
+            log.warning(f"2FA Session {session_id} NOT FOUND. Available: {list(webapp_qr_sessions.keys())}")
             return web.json_response({"error": "Session not found"}, status=404)
             
         client = w_session["client"]
