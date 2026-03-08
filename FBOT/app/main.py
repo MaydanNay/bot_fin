@@ -1407,42 +1407,7 @@ async def api_crm_add(request):
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
-@routes.post("/api/crm/collect")
-async def api_crm_collect(request):
-    uid_str = request.query.get("uid") or await get_auth_user_id(request)
-    if not uid_str:
-        return web.json_response({"error": "Unauthorized"}, status=401)
-    
-    try:
-        data = await request.json()
-    except: data = {}
-    
-    # uid_str from body has higher priority if exists
-    uid_str = data.get("uid", uid_str)
-        
-    client = user_clients.get(str(uid_str))
-    if not client:
-        return web.json_response({"error": "Юзербот оффлайн. Подключите его через /start"}, status=400)
-    
-    added = 0
-    contacts = []
-    try:
-        async for dialog in client.iter_dialogs(limit=None):
-            if dialog.is_user and not dialog.entity.bot:
-                if getattr(dialog.entity, "username", None):
-                    contacts.append(f"@{dialog.entity.username}")
-                elif getattr(dialog.entity, "phone", None):
-                    contacts.append(f"+{dialog.entity.phone}")
-                else:
-                    contacts.append(str(dialog.entity.id))
-        
-        if contacts:
-            added = await db.add_crm_contacts(str(uid_str), contacts)
-            
-        return web.json_response({"status": "ok", "added": added})
-    except Exception as e:
-        log.error(f"CRM Collect error: {e}")
-        return web.json_response({"error": str(e)}, status=500)
+
 
 @routes.get("/api/crm/export")
 async def api_crm_export(request):

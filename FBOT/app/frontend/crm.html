@@ -421,12 +421,7 @@
       </button>
     </div>
 
-    <div style="margin-bottom: 24px;">
-      <button class="btn-primary" onclick="collectDialogs()" style="width: 100%; border-radius: 20px; padding: 18px; font-size: 15px; font-weight: 700; background: var(--accent-gradient); border: none; color: white; display: flex; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 8px 20px rgba(139, 92, 246, 0.25);">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-        Найти контакты клиентов среди всех контактов
-      </button>
-    </div>
+
 
     <div class="search-wrap">
       <span class="search-icon">
@@ -637,28 +632,7 @@
         });
       }
 
-      async function collectDialogs() {
-        tg.showConfirm("Бот начнет сканирование твоих старых личных диалогов и добавит их в базу. Продолжить?", async (ok) => {
-          if (!ok) return;
-          showToast("Сбор начался, подождите...");
-          try {
-            const res = await fetch(`${API_BASE}/api/crm/collect`, {
-              method: "POST",
-              headers: getAuthHeaders(),
-              body: JSON.stringify({ uid: String(userId) })
-            });
-            const data = await res.json();
-            if (res.ok) {
-              showToast(`Готово! Найдено: ${data.added}`);
-              loadContacts();
-            } else {
-              showToast(data.error || "Ошибка", true);
-            }
-          } catch(e) {
-            showToast("Ошибка сети", true);
-          }
-        });
-      }
+
 
       async function exportCRM() {
         try {
