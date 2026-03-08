@@ -87,7 +87,8 @@ async def init_db():
                 negative_words TEXT,
                 mail_limit INT DEFAULT 50,
                 daily_sent INT DEFAULT 0,
-                daily_date DATE
+                daily_date DATE,
+                expires_at TIMESTAMP WITH TIME ZONE
             );
         """)
         
@@ -120,10 +121,11 @@ async def init_db():
                 PRIMARY KEY (uid, channel_link)
             );
         """)
-        # Migration: ensure channel_id and enabled exist
+        # Migration: ensure channel_id, enabled and expires_at exist
         try:
             await conn.execute("ALTER TABLE channels ADD COLUMN IF NOT EXISTS channel_id BIGINT;")
             await conn.execute("ALTER TABLE channels ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE;")
+            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE;")
         except Exception as e:
             log.warning(f"Migration for channels table failed or already applied: {e}")
         
@@ -412,3 +414,31 @@ async def is_phone_allowed(phone: str) -> bool:
     async with pool.acquire() as conn:
         val = await conn.fetchval("SELECT 1 FROM allowed_phones WHERE phone = $1", phone)
         return val is not None
+
+async def get_all_users() -> List[Dict[str, Any]]:
+    if not pool: return []
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT * FROM users ORDER BY uid NULLS LAST")
+        return [dict(r) for r in rows]
+
+async def update_user_access(phone: str, months: int):
+    if not pool: return
+    async with pool.acquire() as conn:
+        # Check if user has expires_at
+        user = await conn.fetchrow("SELECT expires_at FROM users WHERE phone = $1", phone)
+        if not user: return
+        
+        from datetime import timedelta
+        current_expiry = user['expires_at']
+        now = datetime.now()
+        
+        # If already expired or never set, start from now
+        if not current_expiry or (current_expiry.tzinfo and current_expiry < now.replace(tzinfo=current_expiry.tzinfo)) or (not current_expiry.tzinfo and current_expiry < now):
+            start_date = now
+        else:
+            start_date = current_expiry
+            
+        # Add months (approx 30 days per month)
+        new_expiry = start_date + timedelta(days=30 * months)
+        await conn.execute("UPDATE users SET expires_at = $1 WHERE phone = $2", new_expiry, phone)
+        return new_expiry

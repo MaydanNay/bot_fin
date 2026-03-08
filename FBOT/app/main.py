@@ -287,6 +287,15 @@ def make_watcher_handler(uid_str: str):
         u_data = await db.get_user(uid_str)
         if not u_data or not u_data.get("enabled"):
             return
+            
+        # Check expiry
+        expires_at = u_data.get("expires_at")
+        if expires_at:
+            if expires_at.tzinfo:
+                if expires_at < datetime.now().replace(tzinfo=expires_at.tzinfo):
+                    return
+            elif expires_at < datetime.now():
+                return
 
         if getattr(event, 'out', False):
             return  # Игнорируем исходящие (свои) сообщения
@@ -1294,8 +1303,22 @@ async def api_get_state(request):
     
     # Попытаемся обновить аватарку в ответе
     avatar_url = await download_user_avatar(uid_str)
+    
+    expires_at = udata.get("expires_at")
+    expired = False
+    if expires_at:
+        now = datetime.now()
+        if expires_at.tzinfo:
+            now = now.replace(tzinfo=expires_at.tzinfo)
+        if expires_at < now:
+            expired = True
+
     resp = dict(udata)
     resp["avatar_url"] = avatar_url
+    resp["expires_at"] = expires_at.strftime("%Y-%m-%d %H:%M") if expires_at else "Unlimited"
+    resp["expired"] = expired
+    resp["is_admin"] = int(uid_str) in ADMIN_IDS if uid_str.isdigit() else False
+    
     return web.json_response(resp)
 
 @routes.post("/api/update")
@@ -1330,6 +1353,10 @@ async def handle_crm(request):
 async def handle_profile(request):
     return web.FileResponse('./frontend/profile.html')
 
+@routes.get("/admin")
+async def handle_admin(request):
+    return web.FileResponse('./frontend/admin.html')
+
 @routes.get("/api/profile")
 async def api_get_profile(request):
     uid_str = request.query.get("uid") or await get_auth_user_id(request)
@@ -1345,6 +1372,12 @@ async def api_get_profile(request):
     
     # Пытаемся получить данные
     client = user_clients.get(uid_str)
+    
+    # Check expiry
+    expires_at = udata.get("expires_at")
+    expires_str = expires_at.strftime("%Y-%m-%d %H:%M") if expires_at else "Unlimited"
+    
+    is_admin = int(uid_str) in ADMIN_IDS if uid_str.isdigit() else False
     if not name or name == "Пользователь":
         updated = False
         # Приоритет 1: Юзербот (дает макс данных)
@@ -1383,10 +1416,12 @@ async def api_get_profile(request):
         "name": name or "Пользователь",
         "username": username,
         "phone": udata.get("phone", "Unknown"),
-        "is_admin": (int(uid_str) if str(uid_str).isdigit() else 0) in ADMIN_IDS,
+        "is_admin": is_admin,
         "daily_sent": udata.get("daily_sent", 0),
         "total_crm": crm_count,
         "avatar_url": await download_user_avatar(uid_str),
+        "expires_at": expires_str,
+        "expired": (expires_at < datetime.now().replace(tzinfo=expires_at.tzinfo)) if expires_at and expires_at.tzinfo else (expires_at < datetime.now() if expires_at else False),
         "version": "1.2.0"
     }
     return web.json_response(profile_data)
@@ -1521,6 +1556,40 @@ async def api_crm_delete(request):
         await db.delete_crm_contact(uid_str, contact)
         total = await db.get_crm_count(uid_str)
         return web.json_response({"status": "ok", "total": total})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+@routes.get("/api/admin/users")
+async def api_admin_users(request):
+    uid_str = await get_auth_user_id(request)
+    if not uid_str or not uid_str.isdigit() or int(uid_str) not in ADMIN_IDS:
+        return web.json_response({"error": "Forbidden"}, status=403)
+    try:
+        users = await db.get_all_users()
+        # Clean up some data for security if needed
+        for u in users:
+            if u.get('expires_at'):
+                u['expires_at'] = u['expires_at'].strftime("%Y-%m-%d %H:%M")
+        return web.json_response({"users": users})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+@routes.post("/api/admin/update_access")
+async def api_admin_update_access(request):
+    uid_str = await get_auth_user_id(request)
+    if not uid_str or not uid_str.isdigit() or int(uid_str) not in ADMIN_IDS:
+        return web.json_response({"error": "Forbidden"}, status=403)
+    try:
+        data = await request.json()
+        phone = data.get("phone")
+        months = data.get("months")
+        if not phone or months is None:
+            return web.json_response({"error": "Missing phone or months"}, status=400)
+            
+        new_expiry = await db.update_user_access(phone, int(months))
+        if not new_expiry:
+            return web.json_response({"error": "User not found or database pool error"}, status=404)
+        return web.json_response({"status": "ok", "new_expiry": new_expiry.strftime("%Y-%m-%d %H:%M")})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 

@@ -460,6 +460,7 @@
       <div class="user-name" id="profile-name">Загрузка...</div>
       <div class="user-username" id="profile-username"></div>
       <div class="user-phone" id="profile-phone"></div>
+      <div id="expiry-status" style="font-size: 13px; color: #fbbf24; margin-top: 8px; font-weight: 500;">Доступ: <span id="profile-expiry">...</span></div>
       <div class="user-id" id="profile-id"></div>
       <div id="admin-badge-container"></div>
     </div>
@@ -678,6 +679,13 @@
           document.getElementById("profile-username").innerText = data.username ? "@" + data.username : "";
           document.getElementById("profile-phone").innerText = data.phone;
           document.getElementById("profile-id").innerText = "ID: " + data.uid;
+          document.getElementById("profile-expiry").innerText = data.expires_at || "Бессрочно";
+          
+          if (data.expired) {
+            document.getElementById("expiry-status").style.color = "#ef4444";
+            document.getElementById("profile-expiry").innerText += " (Истек)";
+          }
+          
           document.getElementById("profile-sent").innerText = data.daily_sent;
           document.getElementById("profile-crm").innerText = data.total_crm;
           
@@ -690,7 +698,7 @@
           }
 
           if (data.is_admin) {
-            document.getElementById("admin-badge-container").innerHTML = '<div class="badge-admin">Администратор</div>';
+            document.getElementById("admin-badge-container").innerHTML = '<a href="/admin" style="text-decoration:none;"><div class="badge-admin">Администратор</div></a>';
           }
 
           hideAppLoader();
