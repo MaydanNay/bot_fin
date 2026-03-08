@@ -1502,7 +1502,8 @@ async def api_channels_list(request):
     if not uid_str:
         return web.json_response({"error": "Unauthorized"}, status=401)
     try:
-        channels = await db.get_channels(uid_str)
+        q = request.query.get("q", "").strip()
+        channels = await db.get_channels(uid_str, query=q)
         return web.json_response({"channels": channels})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)

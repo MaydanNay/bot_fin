@@ -284,10 +284,15 @@ async def remove_channel(uid: str, link: str):
     async with pool.acquire() as conn:
         await conn.execute("DELETE FROM channels WHERE uid = $1 AND channel_link = $2", uid, link)
 
-async def get_channels(uid: str) -> List[str]:
+async def get_channels(uid: str, query: str = "") -> List[str]:
     if not pool: return []
     async with pool.acquire() as conn:
-        rows = await conn.fetch("SELECT channel_link FROM channels WHERE uid = $1", uid)
+        if query:
+            sql = "SELECT channel_link FROM channels WHERE uid = $1 AND LOWER(channel_link) LIKE $2"
+            rows = await conn.fetch(sql, uid, f"%{query.lower()}%")
+        else:
+            sql = "SELECT channel_link FROM channels WHERE uid = $1"
+            rows = await conn.fetch(sql, uid)
         return [str(r['channel_link']) for r in rows]
 
 # --- TOKENS ---
