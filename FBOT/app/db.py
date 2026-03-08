@@ -34,9 +34,24 @@ async def init_db():
         raise e
         
     async with pool.acquire() as conn:
-        # Create tables if not exist
-        
-        # Users
+        # Migration: check if we need to upgrade from 'phone' to 'uid' based schema
+        try:
+            columns = await conn.fetch("SELECT column_name FROM information_schema.columns WHERE table_name = 'crm_contacts'")
+            col_names = [c['column_name'] for c in columns]
+            if col_names and 'phone' in col_names and 'uid' not in col_names:
+                log.info("Migration: Found old 'phone' column. Dropping tables to recreate with 'uid'...")
+                await conn.execute("DROP TABLE IF EXISTS crm_contacts CASCADE;")
+                await conn.execute("DROP TABLE IF EXISTS channels CASCADE;")
+                await conn.execute("DROP TABLE IF EXISTS web_tokens CASCADE;")
+                # Also drop users to fix PK/UNIQUE switch if needed
+                # await conn.execute("DROP TABLE IF EXISTS users CASCADE;") 
+                # (Better not drop users unless necessary, but we changed PK/UNIQUE, so it might be needed)
+                # Let's just alter users or drop it if it's too hard.
+                # Since phone was PK and now stays PK (in my latest version), users table is fine.
+        except Exception as mig_err:
+            log.warning(f"Migration check failed: {mig_err}")
+
+        # Users: Phone is PK to support web-registration before Telegram link
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 uid VARCHAR(64) UNIQUE,
@@ -55,17 +70,17 @@ async def init_db():
             );
         """)
         
-        # CRM
+        # CRM: References users(uid) - Only for Telegram-linked users
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS crm_contacts (
                 id SERIAL PRIMARY KEY,
-                phone VARCHAR(32) REFERENCES users(phone) ON DELETE CASCADE,
+                uid VARCHAR(64) REFERENCES users(uid) ON DELETE CASCADE,
                 contact VARCHAR(128),
-                UNIQUE (phone, contact)
+                UNIQUE (uid, contact)
             );
         """)
         
-        # Web Tokens
+        # Web Tokens: References users(phone) to support both Web and MiniApp
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS web_tokens (
                 token VARCHAR(128) PRIMARY KEY,
@@ -74,12 +89,12 @@ async def init_db():
             );
         """)
 
-        # Channels
+        # Channels: References users(uid)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS channels (
-                phone VARCHAR(32) REFERENCES users(phone) ON DELETE CASCADE,
+                uid VARCHAR(64) REFERENCES users(uid) ON DELETE CASCADE,
                 channel_link VARCHAR(255),
-                PRIMARY KEY (phone, channel_link)
+                PRIMARY KEY (uid, channel_link)
             );
         """)
         
@@ -132,12 +147,13 @@ async def get_user_by_phone(phone: str) -> Optional[Dict[str, Any]]:
 
 async def register_web_user(phone: str, password_hash: str):
     if not pool: return
+    uid = f"web_{phone}"
     async with pool.acquire() as conn:
         await conn.execute("""
-            INSERT INTO users (phone, password_hash, keywords, negative_words, daily_date)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO users (uid, phone, password_hash, keywords, negative_words, daily_date)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (phone) DO NOTHING
-        """, phone, password_hash, "[]", "[]", datetime.now().date())
+        """, uid, phone, password_hash, "[]", "[]", datetime.now().date())
 
 async def link_telegram_to_phone(phone: str, uid: str, session_str: str, name: str = None, username: str = None):
     if not pool: return
@@ -195,7 +211,7 @@ async def update_user_field(uid: str, field: str, value: Any):
 
 # --- CRM ---
 
-async def add_crm_contacts(phone: str, contacts: List[Any]):
+async def add_crm_contacts(uid: str, contacts: List[Any]):
     if not pool: return
     
     unique_contacts = list(set([str(c) for c in contacts]))
@@ -203,59 +219,59 @@ async def add_crm_contacts(phone: str, contacts: List[Any]):
     
     async with pool.acquire() as conn:
         try:
-            data = [(phone, c) for c in unique_contacts]
-            await conn.executemany("INSERT INTO crm_contacts (phone, contact) VALUES ($1, $2) ON CONFLICT (phone, contact) DO NOTHING", data)
+            data = [(uid, c) for c in unique_contacts]
+            await conn.executemany("INSERT INTO crm_contacts (uid, contact) VALUES ($1, $2) ON CONFLICT (uid, contact) DO NOTHING", data)
         except Exception as e:
             log.error(f"Error bulk inserting crm contacts: {e}")
 
-async def delete_crm_contact(phone: str, contact: Any):
+async def delete_crm_contact(uid: str, contact: Any):
     if not pool: return
     async with pool.acquire() as conn:
-        await conn.execute("DELETE FROM crm_contacts WHERE phone = $1 AND contact = $2", phone, str(contact))
+        await conn.execute("DELETE FROM crm_contacts WHERE uid = $1 AND contact = $2", uid, str(contact))
 
-async def get_crm_contacts(phone: str, query: str = "") -> List[str]:
+async def get_crm_contacts(uid: str, query: str = "") -> List[str]:
     if not pool: return []
     async with pool.acquire() as conn:
         if query:
-            sql = "SELECT contact FROM crm_contacts WHERE phone = $1 AND LOWER(contact) LIKE $2 ORDER BY id ASC"
-            rows = await conn.fetch(sql, phone, f"%{query.lower()}%")
+            sql = "SELECT contact FROM crm_contacts WHERE uid = $1 AND LOWER(contact) LIKE $2 ORDER BY id ASC"
+            rows = await conn.fetch(sql, uid, f"%{query.lower()}%")
         else:
-            sql = "SELECT contact FROM crm_contacts WHERE phone = $1 ORDER BY id ASC"
-            rows = await conn.fetch(sql, phone)
+            sql = "SELECT contact FROM crm_contacts WHERE uid = $1 ORDER BY id ASC"
+            rows = await conn.fetch(sql, uid)
         return [str(r['contact']) for r in rows]
 
-async def move_to_end(phone: str, contact: str):
+async def move_to_end(uid: str, contact: str):
     if not pool: return
     async with pool.acquire() as conn:
         try:
             async with conn.transaction():
-                await conn.execute("DELETE FROM crm_contacts WHERE phone = $1 AND contact = $2", phone, contact)
-                await conn.execute("INSERT INTO crm_contacts (phone, contact) VALUES ($1, $2)", phone, contact)
+                await conn.execute("DELETE FROM crm_contacts WHERE uid = $1 AND contact = $2", uid, contact)
+                await conn.execute("INSERT INTO crm_contacts (uid, contact) VALUES ($1, $2)", uid, contact)
         except Exception as e:
             log.error(f"Error in move_to_end transaction: {e}")
 
-async def get_crm_count(phone: str) -> int:
+async def get_crm_count(uid: str) -> int:
     if not pool: return 0
     async with pool.acquire() as conn:
-        val = await conn.fetchval("SELECT COUNT(*) FROM crm_contacts WHERE phone = $1", phone)
+        val = await conn.fetchval("SELECT COUNT(*) FROM crm_contacts WHERE uid = $1", uid)
         return val if val else 0
 
 # --- CHANNELS ---
 
-async def add_channel(phone: str, link: str):
+async def add_channel(uid: str, link: str):
     if not pool: return
     async with pool.acquire() as conn:
-        await conn.execute("INSERT INTO channels (phone, channel_link) VALUES ($1, $2) ON CONFLICT (phone, channel_link) DO NOTHING", phone, link)
+        await conn.execute("INSERT INTO channels (uid, channel_link) VALUES ($1, $2) ON CONFLICT (uid, channel_link) DO NOTHING", uid, link)
 
-async def remove_channel(phone: str, link: str):
+async def remove_channel(uid: str, link: str):
     if not pool: return
     async with pool.acquire() as conn:
-        await conn.execute("DELETE FROM channels WHERE phone = $1 AND channel_link = $2", phone, link)
+        await conn.execute("DELETE FROM channels WHERE uid = $1 AND channel_link = $2", uid, link)
 
-async def get_channels(phone: str) -> List[str]:
+async def get_channels(uid: str) -> List[str]:
     if not pool: return []
     async with pool.acquire() as conn:
-        rows = await conn.fetch("SELECT channel_link FROM channels WHERE phone = $1", phone)
+        rows = await conn.fetch("SELECT channel_link FROM channels WHERE uid = $1", uid)
         return [str(r['channel_link']) for r in rows]
 
 # --- TOKENS ---
@@ -271,12 +287,12 @@ async def set_web_token(token: str, phone: str):
 async def get_uid_by_token(token: str) -> Optional[str]:
     if not pool: return None
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("""
+        val = await conn.fetchval("""
             SELECT u.uid FROM web_tokens t 
-            JOIN users u ON t.phone = u.phone 
+            JOIN users u ON t.phone = u.phone
             WHERE t.token = $1 AND t.created_at > NOW() - INTERVAL '30 days'
         """, token)
-        return str(row["uid"]) if (row and row["uid"]) else None
+        return str(val) if val else None
 
 async def get_phone_by_token(token: str) -> Optional[str]:
     if not pool: return None

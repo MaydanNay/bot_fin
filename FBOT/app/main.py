@@ -262,10 +262,11 @@ async def download_user_avatar(uid_str: str) -> Optional[str]:
 
     # Приоритет 2: Бот-клиент
     try:
-        path = await bot_client.download_profile_photo(int(uid_str), file=avatar_path)
-        if path:
-            log.info(f"Downloaded avatar via BOT client for {uid_str}")
-            return f"/avatars/{uid_str}.jpg"
+        if str(uid_str).isdigit():
+            path = await bot_client.download_profile_photo(int(uid_str), file=avatar_path)
+            if path:
+                log.info(f"Downloaded avatar via BOT client for {uid_str}")
+                return f"/avatars/{uid_str}.jpg"
     except Exception as e:
         log.warning(f"Failed to download avatar via bot client for {uid_str}: {e}")
         
@@ -383,11 +384,13 @@ def make_watcher_handler(uid_str: str):
                 who = target if isinstance(target, str) else f"id:{target}"
                 notify_txt = f"✅ Отклик отправлен {who} от имени {u_data.get('phone')} (чат: {chat_title})"
                 
-                async def safe_b_send(tid, txt):
-                    try: await bot_client.send_message(tid, txt)
+                async def safe_b_send(tid_str, txt):
+                    try:
+                        if str(tid_str).isdigit():
+                            await bot_client.send_message(int(tid_str), txt)
                     except: pass
                 
-                asyncio.create_task(safe_b_send(int(uid_str), notify_txt))
+                asyncio.create_task(safe_b_send(uid_str, notify_txt))
                 for ad_id in ADMIN_IDS:
                     asyncio.create_task(safe_b_send(ad_id, f"[SaaS] {notify_txt}"))
                     
@@ -417,7 +420,9 @@ def make_watcher_handler(uid_str: str):
         if u_data.get("tap"):
             mark = "🟢" if final == "sent" else "🟡" if ok and final != "sent" else "⚪"
             txt = f"{mark} [{key}] {chat_title}\n▶ {preview(raw, 200)}\ndecision: {final} | target: {target} | err: {send_error}"
-            try: await bot_client.send_message(int(uid_str), txt)
+            try:
+                if str(uid_str).isdigit():
+                    await bot_client.send_message(int(uid_str), txt)
             except: pass
 
     return watcher
@@ -911,14 +916,18 @@ async def cmd_user_run_mail(event):
 # ================== Старт Системы ==================
 async def start_all_clients():
     uids = await db.get_all_uids()
-    log.info(f"Starting clients for {len(uids)} users from DB...")
+    log.info(f"Starting clients for {len(uids)} users from DB: {uids}")
     
     for uid_str in uids:
+        log.info(f"Attempting to start client for UID: {uid_str}")
         data = await db.get_user(uid_str)
-        if not data: continue
+        if not data:
+            log.warning(f"No data found for UID {uid_str} in DB.")
+            continue
         
         session_str = data.get("session_string")
         if session_str:
+            log.info(f"Found session string for {uid_str}, connecting...")
             client = TelegramClient(
                 StringSession(session_str), 
                 API_ID, 
@@ -932,7 +941,7 @@ async def start_all_clients():
             try:
                 await client.connect()
                 if not await client.is_user_authorized():
-                    log.warning(f"Session for {uid_str} is dead.")
+                    log.warning(f"Session for {uid_str} is dead (not authorized).")
                     continue
                 user_clients[uid_str] = client
                 client.add_event_handler(make_watcher_handler(uid_str), events.NewMessage())
@@ -944,11 +953,14 @@ async def start_all_clients():
                     if me.last_name: name += f" {me.last_name}"
                     await db.update_user_field(uid_str, "name", name)
                     await db.update_user_field(uid_str, "username", me.username)
-                except: pass
+                except Exception as me_err:
+                    log.error(f"Failed to get_me for {uid_str}: {me_err}")
                 
-                log.info(f"Started client for UID {uid_str}")
+                log.info(f"Successfully started client for UID {uid_str}")
             except Exception as e:
                 log.error(f"Failed to start client {uid_str}: {e}")
+        else:
+            log.warning(f"Session string for {uid_str} is empty in DB.")
 
 async def daily_report_task():
     """Фоновая задача для отправки вечерних отчетов (в 21:00)"""
@@ -962,10 +974,10 @@ async def daily_report_task():
                 udata = await db.get_user(uid_str)
                 if udata and udata.get("daily_date") == today_str and udata.get("daily_sent", 0) > 0:
                     count = udata["daily_sent"]
-                    txt = f"🌃 Вечерний отчет!\n\nСегодня бот автоматически отправил откликов: {count} шт."
-                    try:
-                        await bot_client.send_message(int(uid_str), txt)
-                    except: pass
+                    if str(uid_str).isdigit():
+                        try:
+                            await bot_client.send_message(int(uid_str), txt)
+                        except: pass
             await asyncio.sleep(60) # Спим 1 минуту, чтобы не отправить дважды в 21:00
         else:
             await asyncio.sleep(30) # Проверяем каждые полминуты
@@ -1308,7 +1320,7 @@ async def api_get_profile(request):
                 log.warning(f"Failed to fetch name from user client {uid_str}: {e}")
         
         # Приоритет 2: Бот-клиент (если юзербот спит)
-        if not updated:
+        if not updated and str(uid_str).isdigit():
             try:
                 log.debug(f"Fetching data from BOT client for {uid_str}...")
                 user_entity = await bot_client.get_entity(int(uid_str))
@@ -1331,7 +1343,7 @@ async def api_get_profile(request):
         "name": name or "Пользователь",
         "username": username,
         "phone": udata.get("phone", "Unknown"),
-        "is_admin": int(uid_str) in ADMIN_IDS,
+        "is_admin": (int(uid_str) if str(uid_str).isdigit() else 0) in ADMIN_IDS,
         "daily_sent": udata.get("daily_sent", 0),
         "total_crm": crm_count,
         "avatar_url": await download_user_avatar(uid_str),
@@ -1512,9 +1524,10 @@ async def api_run_mail(request):
                         should_move = False
                     except PeerFloodError:
                         log.error(f"PeerFloodError (Web API): Аккаунт {uid_str} получил спам-мут!")
-                        try:
-                            await bot_client.send_message(int(uid_str), "⛔️ **Web-Рассылка остановлена!**\nTelegram выдал вам спам-мут (PeerFloodError). Вы временно не можете писать неконтактам.")
-                        except: pass
+                        if str(uid_str).isdigit():
+                            try:
+                                await bot_client.send_message(int(uid_str), "⛔️ **Web-Рассылка остановлена!**\nTelegram выдал вам спам-мут (PeerFloodError). Вы временно не можете писать неконтактам.")
+                            except: pass
                         break
                     except (ConnectionError, asyncio.TimeoutError):
                         log.warning(f"Connection/Timeout Error for {uid_str} in Web API. Sleeping 15s...")
@@ -1536,9 +1549,10 @@ async def api_run_mail(request):
                         await db.move_to_end(uid_str, tgt)
                         
                     await asyncio.sleep(random.uniform(2, 5))
-                try:
-                    await bot_client.send_message(int(uid_str), f"✅ Web-рассылка завершена!\nУспех: {s}\nОшибок: {e}\nУдалено мертвых: {deleted}")
-                except: pass
+                    if str(uid_str).isdigit():
+                        try:
+                            await bot_client.send_message(int(uid_str), f"✅ Web-рассылка завершена!\nУспех: {s}\nОшибок: {e}\nУдалено мертвых: {deleted}")
+                        except: pass
             finally:
                 active_mailings.discard(uid_str)
         
