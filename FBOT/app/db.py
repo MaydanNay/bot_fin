@@ -33,8 +33,26 @@ async def init_db():
     try:
         pool = await asyncpg.create_pool(dsn=DATABASE_URL, min_size=1, max_size=20)
     except Exception as e:
-        log.error(f"Failed to connect to PostgreSQL: {e}")
-        raise e
+        err_msg = str(e).lower()
+        if "does not exist" in err_msg or "database" in err_msg:
+            log.warning(f"Database '{DB_NAME}' does not exist. Attempting to create it...")
+            try:
+                # Build fallback URL to 'postgres' system database
+                postgres_url = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/postgres"
+                # Connect as superuser to create DB
+                temp_conn = await asyncpg.connect(dsn=postgres_url)
+                # CREATE DATABASE cannot be run in a transaction
+                await temp_conn.execute(f'CREATE DATABASE "{DB_NAME}"')
+                await temp_conn.close()
+                log.info(f"Database '{DB_NAME}' created successfully.")
+                # Try connecting again
+                pool = await asyncpg.create_pool(dsn=DATABASE_URL, min_size=1, max_size=20)
+            except Exception as e2:
+                log.error(f"Failed to auto-create database '{DB_NAME}': {e2}")
+                raise e
+        else:
+            log.error(f"Failed to connect to PostgreSQL: {e}")
+            raise e
         
     async with pool.acquire() as conn:
         # Migration: check if we need to upgrade from 'phone' to 'uid' based schema
