@@ -381,6 +381,31 @@
         animation: spin 0.8s linear infinite;
       }
       @keyframes spin { to { transform: rotate(360deg); } }
+      /* Tabs */
+      .tabs {
+        display: flex;
+        gap: 8px;
+        padding: 0 16px 20px;
+      }
+      .tab {
+        flex: 1;
+        padding: 12px;
+        text-align: center;
+        background: var(--secondary-bg-color);
+        border-radius: 14px;
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--hint-color);
+        cursor: pointer;
+        transition: all 0.2s;
+        border: 1px solid transparent;
+      }
+      .tab.active {
+        background: white;
+        color: var(--button-color);
+        border-color: var(--border-color);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      }
     </style>
   </head>
   <body>
@@ -402,8 +427,13 @@
     <div class="stats-bar">
       <div class="stat-card" style="grid-column: span 2;">
         <div class="stat-val" id="stat-total">0</div>
-        <div class="stat-label">Всего контактов</div>
+        <div class="stat-label" id="stat-label">Всего контактов</div>
       </div>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" id="tab-contacts" onclick="switchTab('contacts')">Контакты</div>
+      <div class="tab" id="tab-channels" onclick="switchTab('channels')">Каналы</div>
     </div>
 
     <div class="add-section" style="display: flex; gap: 8px; margin-bottom: 8px;">
@@ -438,9 +468,9 @@
           <button class="modal-close" onclick="closeAddModal()">✕</button>
         </div>
         <div class="modal-body">
-          <textarea id="bulk-contacts" placeholder="@username1&#10;79991234321&#10;@username2"></textarea>
-          <div class="modal-hint">Введите контакты по одному на строку (номер телефона или @username)</div>
-          <button class="btn-primary" id="btn-save-contacts" onclick="addContactsBulk()">Сохранить список</button>
+          <textarea id="bulk-input" placeholder="@username1&#10;79991234321&#10;@username2"></textarea>
+          <div class="modal-hint" id="modal-hint">Введите контакты по одному на строку (номер телефона или @username)</div>
+          <button class="btn-primary" id="btn-save-bulk" onclick="saveBulk()">Сохранить список</button>
         </div>
       </div>
     </div>
@@ -483,7 +513,8 @@
       let userId = localStorage.getItem("user_id");
       let webToken = localStorage.getItem("web_token");
       let initData = tg.initData || "";
-      let allContacts = [];
+      let activeTab = "contacts"; // "contacts" | "channels"
+      let allItems = [];
       let searchTimer = null;
 
       function hideAppLoader() {
@@ -514,55 +545,106 @@
         setTimeout(() => t.classList.remove("show"), 2500);
       }
 
-      function contactAvatar(contact) {
-        const s = String(contact);
+      function getItemAvatar(item) {
+        const s = String(item);
         if (s.startsWith("@")) return s[1].toUpperCase();
+        if (s.startsWith("http")) return "CH";
         return (s[0] ? s[0].toUpperCase() : "?");
       }
 
-      function renderContacts(list) {
+      function switchTab(tab) {
+        if (activeTab === tab) return;
+        activeTab = tab;
+        
+        document.getElementById("tab-contacts").classList.toggle("active", tab === "contacts");
+        document.getElementById("tab-channels").classList.toggle("active", tab === "channels");
+        
+        const label = document.getElementById("stat-label");
+        const input = document.getElementById("search-input");
+        const modalTitle = document.querySelector(".modal-title");
+        const modalHint = document.getElementById("modal-hint");
+        const textarea = document.getElementById("bulk-input");
+
+        if (tab === "contacts") {
+          label.innerText = "Всего контактов";
+          input.placeholder = "Поиск контактов...";
+          modalTitle.innerText = "Добавить контакты";
+          modalHint.innerText = "Введите контакты по одному на строку (номер телефона или @username)";
+          textarea.placeholder = "@username1\n79991234321\n@username2";
+        } else {
+          label.innerText = "Всего каналов";
+          input.placeholder = "Поиск каналов...";
+          modalTitle.innerText = "Добавить каналы";
+          modalHint.innerText = "Введите ссылки на каналы или @username по одному на строку";
+          textarea.placeholder = "https://t.me/channel1\n@channel2\nhttps://t.me/+join_link";
+        }
+        
+        tg.HapticFeedback.impactOccurred("light");
+        loadData();
+      }
+
+      function renderList(list) {
         const el = document.getElementById("contacts-list");
         if (list.length === 0) {
+          const type = activeTab === "contacts" ? "контактов" : "каналов";
           el.innerHTML = `<div class="empty-state"><div class="empty-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5"><path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4"/><path d="M14 2v5h5"/><path d="M2 15h10"/><path d="m9 18 3-3-3-3"/></svg>
-          </div><div class="empty-title">Пусто</div><div class="empty-text">База данных пока не содержит подходящих контактов</div></div>`;
+          </div><div class="empty-title">Пусто</div><div class="empty-text">Список ${type} пока пуст</div></div>`;
           return;
         }
-        el.innerHTML = list.map(c => {
-          const cs = String(c);
-          return `<div class="contact-item" id="ci-${CSS.escape(cs)}"><div class="contact-avatar">${contactAvatar(c)}</div><div style="flex:1; overflow:hidden;"><div class="contact-name">${cs}</div><div class="contact-type">Контакт Telegram</div></div><button class="delete-btn" onclick='deleteContact(${JSON.stringify(c)})'>
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
-          </button></div>`;
+        el.innerHTML = list.map(item => {
+          const s = String(item);
+          const typeLabel = activeTab === "contacts" ? "Контакт Telegram" : "Telegram Канал";
+          return `<div class="contact-item" id="item-${CSS.escape(s)}">
+            <div class="contact-avatar">${getItemAvatar(item)}</div>
+            <div style="flex:1; overflow:hidden;">
+              <div class="contact-name">${s}</div>
+              <div class="contact-type">${typeLabel}</div>
+            </div>
+            <button class="delete-btn" onclick='deleteItem(${JSON.stringify(item)})'>
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+            </button>
+          </div>`;
         }).join("");
       }
 
-      async function loadContacts(q = "") {
+      async function loadData(q = "") {
         try {
-          const url = `${API_BASE}/api/crm?uid=${userId}` + (q ? `&q=${encodeURIComponent(q)}` : "");
+          const endpoint = activeTab === "contacts" ? "/api/crm" : "/api/channels";
+          const queryString = q ? `&q=${encodeURIComponent(q)}` : "";
+          const url = `${API_BASE}${endpoint}?uid=${userId}${queryString}`;
+          
           const res = await fetch(url, { headers: getAuthHeaders() });
           const data = await res.json();
+          
           if (!res.ok || data.registered === false || data.error) { 
-              window.location.href = "/";
-              return; 
+              if (res.status === 401 || data.registered === false) {
+                  window.location.href = "/";
+                  return;
+              }
+              showToast(data.error || "Ошибка загрузки", true);
+              return;
           }
-          document.getElementById("stat-total").innerText = data.total;
-          const badge = document.getElementById("total-badge");
-          if (badge) badge.innerText = data.total;
-          renderContacts(data.contacts);
-        } catch(e) {}
+          
+          const list = activeTab === "contacts" ? data.contacts : data.channels;
+          document.getElementById("stat-total").innerText = list.length;
+          renderList(list);
+        } catch(e) {
+          showToast("Ошибка сети", true);
+        }
         finally { hideAppLoader(); }
       }
 
       function onSearch() {
         clearTimeout(searchTimer);
         searchTimer = setTimeout(() => {
-          loadContacts(document.getElementById("search-input").value.trim());
+          loadData(document.getElementById("search-input").value.trim());
         }, 300);
       }
 
       function openAddModal() {
         document.getElementById("add-modal-backdrop").style.display = "flex";
-        document.getElementById("bulk-contacts").focus();
+        document.getElementById("bulk-input").focus();
         tg.HapticFeedback.impactOccurred("medium");
       }
 
@@ -570,37 +652,35 @@
         document.getElementById("add-modal-backdrop").style.display = "none";
       }
 
-      async function addContactsBulk() {
-        const textarea = document.getElementById("bulk-contacts");
-        const btn = document.getElementById("btn-save-contacts");
+      async function saveBulk() {
+        const textarea = document.getElementById("bulk-input");
+        const btn = document.getElementById("btn-save-bulk");
         const val = textarea.value.trim();
         if (!val) { showToast("Список пуст", true); return; }
 
         const lines = val.split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
         if (lines.length === 0) return;
 
-        // Нормализация (если не число и не @ - добавляем @)
-        const contacts = lines.map(v => {
-          if (v.startsWith("@")) return v;
-          if (/^\d+$/.test(v)) return v;
-          return "@" + v;
-        });
-
         btn.disabled = true;
         btn.innerText = "Добавление...";
 
         try {
-          const res = await fetch(`${API_BASE}/api/crm/add`, {
+          const endpoint = activeTab === "contacts" ? "/api/crm/add" : "/api/channels/add";
+          const payload = activeTab === "contacts" 
+            ? { uid: String(userId), contacts: lines.map(v => (v.startsWith("@") || /^\d+$/.test(v) ? v : "@" + v)) }
+            : { uid: String(userId), channels: lines };
+
+          const res = await fetch(`${API_BASE}${endpoint}`, {
             method: "POST",
             headers: getAuthHeaders(),
-            body: JSON.stringify({ uid: String(userId), contacts })
+            body: JSON.stringify(payload)
           });
           const data = await res.json();
           if (res.ok) {
-            showToast(`Добавлено: ${data.added || 0}`);
+            showToast(activeTab === "contacts" ? `Добавлено: ${data.added || 0}` : `Каналы добавлены: ${data.added || 0}`);
             textarea.value = "";
             closeAddModal();
-            loadContacts();
+            loadData();
           } else {
             showToast(data.error || "Ошибка", true);
           }
@@ -612,24 +692,38 @@
         }
       }
 
-      async function deleteContact(contact) {
-        tg.showConfirm(`Удалить контакт ${contact}?`, async (ok) => {
+      async function deleteItem(item) {
+        const type = activeTab === "contacts" ? "контакт" : "канал";
+        tg.showConfirm(`Удалить ${type} ${item}?`, async (ok) => {
           if (!ok) return;
           tg.HapticFeedback.impactOccurred("light");
           try {
-            const res = await fetch(`${API_BASE}/api/crm/delete`, {
+            const endpoint = activeTab === "contacts" ? "/api/crm/delete" : "/api/channels/delete";
+            const payload = activeTab === "contacts" 
+              ? { uid: String(userId), contact: item }
+              : { uid: String(userId), channel: item };
+
+            const res = await fetch(`${API_BASE}${endpoint}`, {
               method: "POST",
               headers: getAuthHeaders(),
-              body: JSON.stringify({ uid: String(userId), contact })
+              body: JSON.stringify(payload)
             });
-            if (res.ok) { showToast("Удалено"); loadContacts(); }
-          } catch(e) {}
+            if (res.ok) { showToast("Удалено"); loadData(); }
+            else {
+                const data = await res.json();
+                showToast(data.error || "Ошибка удаления", true);
+            }
+          } catch(e) {
+            showToast("Ошибка сети", true);
+          }
         });
       }
 
-
-
       async function exportCRM() {
+        if (activeTab !== "contacts") {
+          showToast("Экспорт доступен только для контактов", true);
+          return;
+        }
         try {
           const isTMA = window.Telegram && window.Telegram.WebApp && userId;
           const url = `${API_BASE}/api/crm/export` + (isTMA ? `?uid=${userId}` : "");
@@ -654,10 +748,8 @@
         }
       }
 
-      // document.getElementById("new-contact").addEventListener("keydown", e => { if (e.key === "Enter") addContact(); });
-
       (async () => {
-        await loadContacts();
+        await loadData();
         document.getElementById("loading").style.display = "none";
       })();
     </script>

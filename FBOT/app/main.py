@@ -1496,6 +1496,64 @@ async def api_crm_delete(request):
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
+@routes.get("/api/channels")
+async def api_channels_list(request):
+    uid_str = await get_auth_user_id(request)
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    try:
+        channels = await db.get_channels(uid_str)
+        return web.json_response({"channels": channels})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+@routes.post("/api/channels/add")
+async def api_channels_add(request):
+    uid_str = await get_auth_user_id(request)
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    try:
+        data = await request.json()
+        links = data.get("channels", [])
+        if isinstance(data.get("channel"), str):
+            links = [data["channel"]]
+            
+        if not links:
+            return web.json_response({"error": "No channels provided"}, status=400)
+            
+        client = user_clients.get(uid_str)
+        if not client:
+            return web.json_response({"error": "User client offline"}, status=400)
+            
+        added_count = 0
+        for link in links:
+            link = link.strip()
+            if not link: continue
+            cid = await ensure_join(client, link)
+            if cid:
+                await db.add_channel(uid_str, link)
+                added_count += 1
+                
+        return web.json_response({"status": "ok", "added": added_count})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+@routes.post("/api/channels/delete")
+async def api_channels_delete(request):
+    uid_str = await get_auth_user_id(request)
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    try:
+        data = await request.json()
+        link = data.get("channel")
+        if not link:
+            return web.json_response({"error": "No channel provided"}, status=400)
+            
+        await db.remove_channel(uid_str, link)
+        return web.json_response({"status": "ok"})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
 @routes.post("/api/mail")
 async def api_run_mail(request):
     uid_str = await get_auth_user_id(request)
