@@ -196,6 +196,7 @@
       .stat-label { font-size: 11px; color: var(--hint-color); text-transform: uppercase; letter-spacing: 1px; }
       .section { background-color: var(--card-bg); border: 1px solid var(--border-color); border-radius: 20px; padding: 20px; margin-bottom: 24px; width: 100%; backdrop-filter: blur(12px); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03); }
       .section-title { font-size: 14px; margin-bottom: 16px; font-weight: 700; color: var(--hint-color); text-transform: uppercase; }
+      .toggle-row { display: flex; justify-content: space-between; align-items: flex-start; }
       textarea { width: 100%; background-color: rgba(0, 0, 0, 0.02); border: 1px solid var(--border-color); color: var(--text-color); border-radius: 12px; padding: 14px; font-family: inherit; font-size: 14px; resize: vertical; min-height: 200px; outline: none; }
       .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
       .switch input { opacity: 0; width: 0; height: 0; }
@@ -332,7 +333,7 @@
 
       <div class="header" style="height: 20px; border: none;"></div>
 
-      <div class="section toggle-row" style="margin-bottom: 12px; align-items: flex-start;">
+      <div class="section toggle-row" style="margin-bottom: 12px;">
         <div>
           <div style="font-weight: 700; font-size: 17px; margin-bottom: 10px">Поиск заказов</div>
           <button class="btn btn-secondary" style="margin: 0; width: auto; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12px; padding: 10px 16px;" onclick="openChannelPickerModal()">
@@ -340,7 +341,7 @@
             Выбрать каналы <span id="channel-selection-badge" style="display: none; background: var(--button-color); color: white; padding: 1px 6px; border-radius: 8px; font-size: 10px;">0</span>
           </button>
         </div>
-        <label class="switch" style="margin-top: 4px;">
+        <label class="switch">
           <input type="checkbox" id="power-toggle" />
           <span class="slider"></span>
         </label>

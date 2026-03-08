@@ -55,22 +55,6 @@ async def init_db():
             raise e
         
     async with pool.acquire() as conn:
-        # Migration: check if we need to upgrade from 'phone' to 'uid' based schema
-        try:
-            columns = await conn.fetch("SELECT column_name FROM information_schema.columns WHERE table_name = 'crm_contacts'")
-            col_names = [c['column_name'] for c in columns]
-            if col_names and 'phone' in col_names and 'uid' not in col_names:
-                log.info("Migration: Found old 'phone' column. Dropping tables to recreate with 'uid'...")
-                await conn.execute("DROP TABLE IF EXISTS crm_contacts CASCADE;")
-                await conn.execute("DROP TABLE IF EXISTS channels CASCADE;")
-                await conn.execute("DROP TABLE IF EXISTS web_tokens CASCADE;")
-                # Also drop users to fix PK/UNIQUE switch if needed
-                # await conn.execute("DROP TABLE IF EXISTS users CASCADE;") 
-                # (Better not drop users unless necessary, but we changed PK/UNIQUE, so it might be needed)
-                # Let's just alter users or drop it if it's too hard.
-                # Since phone was PK and now stays PK (in my latest version), users table is fine.
-        except Exception as mig_err:
-            log.warning(f"Migration check failed: {mig_err}")
 
         # Users: Phone is PK to support web-registration before Telegram link
         await conn.execute("""
