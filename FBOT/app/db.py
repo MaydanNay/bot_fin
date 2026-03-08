@@ -51,7 +51,11 @@ async def init_db():
                 log.error(f"Failed to auto-create database '{DB_NAME}': {e2}")
                 raise e
         else:
-            log.error(f"Failed to connect to PostgreSQL: {e}")
+            if "password authentication failed" in err_msg:
+                log.error(f"❌ DATABASE AUTH ERROR: Password for user '{DB_USER}' does not match the one in existing Docker Volume.")
+                log.error("To fix this, either use the old password in .env or run: docker compose down -v")
+            else:
+                log.error(f"Failed to connect to PostgreSQL: {e}")
             raise e
         
     async with pool.acquire() as conn:
@@ -306,7 +310,13 @@ async def add_channel(uid: str, link: str, channel_id: int = None):
             VALUES ($1, $2, $3, TRUE) 
             ON CONFLICT (uid, channel_link) DO UPDATE SET channel_id = EXCLUDED.channel_id
         """, uid, link, channel_id)
-        return status and status.startswith("INSERT ")
+        # status has format "INSERT 0 1" for new rows
+        if status and status.startswith("INSERT "):
+            try:
+                count = int(status.split()[-1])
+                return count > 0
+            except: pass
+        return False
 
 async def remove_channel(uid: str, link: str):
     if not pool: return
