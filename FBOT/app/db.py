@@ -55,28 +55,14 @@ async def init_db():
             raise e
         
     async with pool.acquire() as conn:
-
+        # 1. Создание таблиц (если их нет)
         # Users: Phone is PK to support web-registration before Telegram link
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
-                uid VARCHAR(64) UNIQUE,
-                phone VARCHAR(32) PRIMARY KEY,
-                password_hash TEXT,
-                session_string TEXT,
-                name VARCHAR(128),
-                username VARCHAR(128),
-                enabled BOOLEAN DEFAULT FALSE,
-                reply_text TEXT,
-                keywords TEXT,
-                negative_words TEXT,
-                mail_limit INT DEFAULT 50,
-                daily_sent INT DEFAULT 0,
-                daily_date DATE,
-                expires_at TIMESTAMP WITH TIME ZONE
+                phone VARCHAR(32) PRIMARY KEY
             );
         """)
         
-        # CRM: References users(uid) - Only for Telegram-linked users
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS crm_contacts (
                 id SERIAL PRIMARY KEY,
@@ -86,7 +72,6 @@ async def init_db():
             );
         """)
         
-        # Web Tokens: References users(phone) to support both Web and MiniApp
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS web_tokens (
                 token VARCHAR(128) PRIMARY KEY,
@@ -95,39 +80,48 @@ async def init_db():
             );
         """)
 
-        # Channels: References users(uid)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS channels (
                 uid VARCHAR(64) REFERENCES users(uid) ON DELETE CASCADE,
                 channel_link VARCHAR(255),
-                channel_id BIGINT,
-                enabled BOOLEAN DEFAULT TRUE,
                 PRIMARY KEY (uid, channel_link)
             );
         """)
-        # Migration: ensure channel_id, enabled and expires_at exist
-        try:
-            await conn.execute("ALTER TABLE channels ADD COLUMN IF NOT EXISTS channel_id BIGINT;")
-            await conn.execute("ALTER TABLE channels ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE;")
-            await conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE;")
-        except Exception as e:
-            log.warning(f"Migration for channels table failed or already applied: {e}")
-        
-        # Admins
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS admins (
-                admin_id BIGINT PRIMARY KEY
-            );
-        """)
 
-        # Allowed Phones
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS allowed_phones (
-                phone VARCHAR(32) PRIMARY KEY
-            );
-        """)
+        await conn.execute("CREATE TABLE IF NOT EXISTS admins (admin_id BIGINT PRIMARY KEY);")
+        await conn.execute("CREATE TABLE IF NOT EXISTS allowed_phones (phone VARCHAR(32) PRIMARY KEY);")
         
-    log.info("Database schema verified.")
+        # 2. Migration / Schema Verification
+        # Добавляем все недостающие колонки во все таблицы
+        migrations = [
+            # Таблица users
+            ("users", "uid", "VARCHAR(64) UNIQUE"),
+            ("users", "password_hash", "TEXT"),
+            ("users", "session_string", "TEXT"),
+            ("users", "name", "VARCHAR(128)"),
+            ("users", "username", "VARCHAR(128)"),
+            ("users", "enabled", "BOOLEAN DEFAULT FALSE"),
+            ("users", "reply_text", "TEXT"),
+            ("users", "keywords", "TEXT"),
+            ("users", "negative_words", "TEXT"),
+            ("users", "mail_limit", "INT DEFAULT 50"),
+            ("users", "daily_sent", "INT DEFAULT 0"),
+            ("users", "daily_date", "DATE"),
+            ("users", "expires_at", "TIMESTAMP WITH TIME ZONE"),
+            
+            # Таблица crm_contacts (доп. поля если нужны в будущем)
+            # Таблица channels
+            ("channels", "channel_id", "BIGINT"),
+            ("channels", "enabled", "BOOLEAN DEFAULT TRUE"),
+        ]
+        
+        for table, column, col_type in migrations:
+            try:
+                await conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {col_type};")
+            except Exception as e:
+                log.debug(f"Migration for {table}.{column} skipped: {e}")
+
+    log.info("Database schema verified and migrations applied.")
 
 async def close_db():
     if pool:
@@ -305,13 +299,14 @@ async def get_crm_count(uid: str) -> int:
 # --- CHANNELS ---
 
 async def add_channel(uid: str, link: str, channel_id: int = None):
-    if not pool: return
+    if not pool: return False
     async with pool.acquire() as conn:
-        await conn.execute("""
+        status = await conn.execute("""
             INSERT INTO channels (uid, channel_link, channel_id, enabled) 
             VALUES ($1, $2, $3, TRUE) 
             ON CONFLICT (uid, channel_link) DO UPDATE SET channel_id = EXCLUDED.channel_id
         """, uid, link, channel_id)
+        return status and status.startswith("INSERT ")
 
 async def remove_channel(uid: str, link: str):
     if not pool: return
