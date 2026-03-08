@@ -410,18 +410,21 @@
       </div>
     </div>
 
-    <div class="add-section" style="display: flex; gap: 8px;">
-      <button class="btn-primary" onclick="collectDialogs()" style="flex: 1; border-radius: 18px; padding: 14px; font-size: 14px; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); color: var(--button-color);">
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 5px; vertical-align: middle;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-        Собрать чаты
-      </button>
-      <button class="btn-add-trigger" onclick="openAddModal()" style="flex: 1.5; font-size: 14px; padding: 14px;">
+    <div class="add-section" style="display: flex; gap: 8px; margin-bottom: 8px;">
+      <button class="btn-add-trigger" onclick="openAddModal()" style="flex: 2; font-size: 14px; padding: 14px;">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
         Добавить
       </button>
       <button class="btn-primary" onclick="exportCRM()" style="flex: 1; border-radius: 18px; padding: 14px; font-size: 14px;">
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 5px; vertical-align: middle;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         CSV
+      </button>
+    </div>
+
+    <div style="margin-bottom: 24px;">
+      <button class="btn-primary" onclick="collectDialogs()" style="width: 100%; border-radius: 20px; padding: 18px; font-size: 15px; font-weight: 700; background: var(--accent-gradient); border: none; color: white; display: flex; align-items: center; justify-content: center; gap: 10px; box-shadow: 0 8px 20px rgba(139, 92, 246, 0.25);">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+        Найти контакты клиентов среди всех контактов
       </button>
     </div>
 
@@ -664,16 +667,6 @@
           
           const res = await fetch(url, { headers: getAuthHeaders() });
           
-          if (isTMA) {
-             const data = await res.json();
-             if (res.ok && data.status === "sent_via_telegram") {
-                tg.showAlert("Файл отправлен тебе в Telegram! 📂\nПроверь чат с ботом.");
-             } else {
-                showToast(data.error || "Ошибка экспорта", true);
-             }
-             return;
-          }
-
           if (!res.ok) {
             const data = await res.json().catch(() => ({}));
             showToast(data.error || "Ошибка экспорта", true);
