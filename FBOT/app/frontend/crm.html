@@ -396,7 +396,7 @@
 
     <div class="header">
       <div class="header-title">CRM База</div>
-      <div class="header-count" id="total-badge">0</div>
+
     </div>
 
     <div class="stats-bar">
@@ -553,7 +553,8 @@
               return; 
           }
           document.getElementById("stat-total").innerText = data.total;
-          document.getElementById("total-badge").innerText = data.total;
+          const badge = document.getElementById("total-badge");
+          if (badge) badge.innerText = data.total;
           renderContacts(data.contacts);
         } catch(e) {}
         finally { hideAppLoader(); }

@@ -316,13 +316,12 @@
 
       <div class="header">
         <div class="title">MotionHunter</div>
-        <div id="user-name">Пользователь</div>
+
       </div>
 
       <div class="section toggle-row">
         <div>
-          <div style="font-weight: 700; font-size: 17px; margin-bottom: 4px">Поиск заказов</div>
-          <div style="font-size: 13px; color: var(--hint-color)">Автоматический парсинг каналов</div>
+          <div style="font-weight: 700; font-size: 17px; margin-bottom: 5px">Поиск заказов</div>
         </div>
         <label class="switch">
           <input type="checkbox" id="power-toggle" />
@@ -482,7 +481,8 @@
           document.getElementById("loading").style.display = "none";
           hideAppLoader();
           
-          document.getElementById("user-name").innerText = data.name || (userId ? "Пользователь " + userId : "Профиль");
+          const userEl = document.getElementById("user-name");
+          if (userEl) userEl.innerText = data.name || (userId ? "Пользователь " + userId : "Профиль");
           powerToggle.checked = data.enabled || false;
           replyText.value = data.reply_text || "";
           keywordsText.value = (data.keywords || []).join(", ");
@@ -555,7 +555,7 @@
             new QRCode(qrContainer, { text: data.url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.H });
             const arrowIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin:0 4px;"><polyline points="9 18 15 12 9 6"></polyline></svg>';
             document.getElementById("auth-instructions").innerHTML = `Отсканируйте код в <b>Настройки ${arrowIcon} Устройства</b>`;
-            document.getElementById("qr-timer-wrapper").style.display = "flex";
+            document.getElementById("qr-timer-wrapper").style.display = "block";
             
             startCountdown(30);
             pollQRStatus(data.session_id);

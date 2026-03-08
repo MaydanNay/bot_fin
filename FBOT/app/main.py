@@ -1444,6 +1444,36 @@ async def api_crm_collect(request):
         log.error(f"CRM Collect error: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
+@routes.get("/api/crm/export")
+async def api_crm_export(request):
+    uid_str = request.query.get("uid")
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+        
+    try:
+        contacts = await db.get_crm_contacts(uid_str)
+        if not contacts:
+            return web.json_response({"error": "No contacts to export"}, status=404)
+            
+        output = io.StringIO()
+        output.write("contact\n")
+        for c in contacts:
+            output.write(f"{c}\n")
+            
+        content = output.getvalue()
+        filename = f"crm_export_{uid_str}.csv"
+        
+        return web.Response(
+            body=content.encode('utf-8'),
+            content_type='text/csv',
+            headers={
+                'Content-Disposition': f'attachment; filename="{filename}"'
+            }
+        )
+    except Exception as e:
+        log.error(f"CRM Export error: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
 @routes.get("/api/audit")
 async def api_get_audit(request):
     uid_str = request.query.get("uid") or await get_auth_user_id(request)
