@@ -1062,9 +1062,10 @@ async def api_qr_login(request):
                     os.remove(temp_session_path + ext)
             except: pass
 
+        # Создаем клиент через StringSession, чтобы .session.save() вернуло полную сессионную строку, а не путь к файлу
         client = TelegramClient(
-            temp_session_path, 
-            API_ID, 
+            StringSession(""),
+            API_ID,
             API_HASH,
             device_model="Desktop",
             system_version="Windows 11",
