@@ -647,17 +647,13 @@
             return;
           }
 
-          const blob = await res.blob();
-          const downloadUrl = window.URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.style.display = 'none';
-          a.href = downloadUrl;
-          a.download = `crm_export_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.csv`;
-          document.body.appendChild(a);
-          a.click();
-          window.URL.revokeObjectURL(downloadUrl);
-          a.remove();
-          showToast("Готово!");
+          const data = await res.json();
+          if (data.status === "ok") {
+              tg.showAlert("Файл отправлен тебе в Telegram! 📂\nПроверь чат с ботом.");
+              showToast("Готово!");
+          } else {
+              showToast(data.error || "Ошибка экспорта", true);
+          }
         } catch(e) {
           showToast("Ошибка сети", true);
         }

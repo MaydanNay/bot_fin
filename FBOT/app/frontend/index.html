@@ -245,6 +245,23 @@
         50% { transform: scale(1.05); opacity: 0.8; }
         100% { transform: scale(1); opacity: 1; }
       }
+      /* Multi-select Modal */
+      #mailing-targets-backdrop {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.85); backdrop-filter: blur(10px);
+        z-index: 1000; display: none; justify-content: center; align-items: center; padding: 20px;
+      }
+      .mailing-targets-card {
+        background: #ffffff; border-radius: 28px; padding: 24px; width: 100%; max-width: 400px; max-height: 80vh; display: flex; flex-direction: column;
+        border: 1px solid rgba(0,0,0,0.05);
+      }
+      .targets-list { overflow-y: auto; flex: 1; margin: 16px 0; padding-right: 4px; }
+      .target-item { display: flex; align-items: center; gap: 12px; padding: 10px; border-bottom: 1px solid rgba(0,0,0,0.05); cursor: pointer; }
+      .target-item:last-child { border-bottom: none; }
+      .target-item input { width: 18px; height: 18px; border-radius: 6px; cursor: pointer; accent-color: var(--button-color); }
+      .target-info { font-size: 14px; color: var(--text-color); }
+      .modal-actions { display: flex; gap: 10px; justify-content: space-between; margin-bottom: 16px; }
+      .modal-actions button { flex: 1; padding: 8px; font-size: 12px; border-radius: 10px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.02); color: var(--hint-color); cursor: pointer; }
     </style>
   </head>
 
@@ -370,10 +387,34 @@
       <label>Количество контактов:</label>
       <input type="number" id="crm-limit" value="50" style="margin-bottom: 16px; width: 100%; border-radius: 12px; border: 1px solid var(--border-color); background: rgba(0, 0, 0, 0.02); color: var(--text-color); padding: 12px 16px; outline: none; font-size: 15px; box-sizing: border-box; transition: 0.2s;" />
 
+      <button class="btn btn-secondary" style="margin-top: 0; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px;" onclick="openTargetsModal()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Выбрать получателей <span id="selection-info" style="display: none; background: var(--button-color); color: white; padding: 2px 8px; border-radius: 10px; font-size: 10px;">0</span>
+      </button>
+
       <label>Текст сообщения:</label>
       <textarea id="crm-text" placeholder="Текст для всех контактов в CRM базе..."></textarea>
       
       <button class="btn btn-primary" id="crm-send-btn" onclick="startMassMailing()" style="margin-top: 16px; width: 100%;">Запустить рассылку</button>
+    </div>
+
+    <!-- Mailing Targets Modal -->
+    <div id="mailing-targets-backdrop" onclick="if(event.target === this) closeTargetsModal()">
+      <div class="mailing-targets-card">
+        <div style="font-weight: 700; font-size: 18px; margin-bottom: 16px; text-align: center;">Выбор получателей</div>
+        
+        <div class="modal-actions">
+          <button onclick="selectAllTargets(true)">Выбрать всех</button>
+          <button onclick="selectAllTargets(false)">Снять всех</button>
+        </div>
+
+        <div class="targets-list" id="targets-list-container">
+          <!-- Rendered items -->
+          <div style="text-align: center; color: var(--hint-color); padding: 20px;">Загрузка...</div>
+        </div>
+
+        <button class="btn btn-primary" onclick="confirmTargets()">Подтвердить выбор</button>
+      </div>
     </div>
 
     <div class="bottom-nav">
@@ -660,24 +701,104 @@
         } catch (e) { btn.innerText = "❌"; }
       }
 
+      let allCrmContacts = [];
+      let selectedTargets = [];
+
+      async function openTargetsModal() {
+        document.getElementById("mailing-targets-backdrop").style.display = "flex";
+        await loadMailingContacts();
+      }
+
+      function closeTargetsModal() {
+        document.getElementById("mailing-targets-backdrop").style.display = "none";
+      }
+
+      async function loadMailingContacts() {
+        const container = document.getElementById("targets-list-container");
+        try {
+          const res = await fetch(`${API_BASE}/api/crm?uid=${userId}`, { headers: getAuthHeaders() });
+          const data = await res.json();
+          allCrmContacts = data.contacts || [];
+          renderTargets();
+        } catch (e) {
+          container.innerHTML = `<div style="color: red; padding: 10px;">Ошибка загрузки</div>`;
+        }
+      }
+
+      function renderTargets() {
+        const container = document.getElementById("targets-list-container");
+        if (allCrmContacts.length === 0) {
+          container.innerHTML = `<div style="text-align: center; color: var(--hint-color); padding: 20px;">Список пуст</div>`;
+          return;
+        }
+        container.innerHTML = allCrmContacts.map(c => `
+          <div class="target-item" onclick="toggleTarget('${c}')">
+            <input type="checkbox" ${selectedTargets.includes(c) ? 'checked' : ''} onclick="event.stopPropagation(); toggleTarget('${c}')" />
+            <div class="target-info">${c}</div>
+          </div>
+        `).join("");
+      }
+
+      function toggleTarget(contact) {
+        const idx = selectedTargets.indexOf(contact);
+        if (idx > -1) selectedTargets.splice(idx, 1);
+        else selectedTargets.push(contact);
+        renderTargets();
+        updateSelectionInfo();
+      }
+
+      function selectAllTargets(select) {
+        if (select) selectedTargets = [...allCrmContacts];
+        else selectedTargets = [];
+        renderTargets();
+        updateSelectionInfo();
+      }
+
+      function updateSelectionInfo() {
+        const info = document.getElementById("selection-info");
+        if (selectedTargets.length > 0) {
+          info.innerText = selectedTargets.length;
+          info.style.display = "inline-block";
+        } else {
+          info.style.display = "none";
+        }
+      }
+
+      function confirmTargets() {
+        closeTargetsModal();
+      }
+
       async function startMassMailing() {
         const text = document.getElementById("crm-text").value.trim();
         if (!text) return alert("Введите текст!");
-        if (confirm(`Запустить рассылку?`)) {
+        
+        const confirmMsg = selectedTargets.length > 0 
+          ? `Запустить рассылку по выбранным контактам (${selectedTargets.length} шт.)?`
+          : `Запустить рассылку по ВСЕЙ базе CRM?`;
+
+        if (confirm(confirmMsg)) {
           const btn = document.getElementById("crm-send-btn");
           btn.disabled = true;
           try {
             const res = await fetch(`${API_BASE}/api/mail`, {
               method: "POST",
               headers: getAuthHeaders(),
-              body: JSON.stringify({ text }),
+              body: JSON.stringify({ 
+                text,
+                targets: selectedTargets.length > 0 ? selectedTargets : null
+              }),
             });
-            if (res.ok) alert("Рассылка запущена!");
+            if (res.ok) {
+              alert("Рассылка запущена!");
+              selectedTargets = [];
+              updateSelectionInfo();
+            }
             else { const r = await res.json(); alert(r.error); }
           } catch (e) { alert("Сбой"); }
           finally { btn.disabled = false; fetchState(); }
         }
       }
+
 
       powerToggle.addEventListener("change", saveConfig);
       checkAuth();

@@ -1365,7 +1365,7 @@ async def api_get_profile(request):
 
 @routes.get("/api/crm")
 async def api_crm_list(request):
-    uid_str = request.query.get("uid") or await get_auth_user_id(request)
+    uid_str = await get_auth_user_id(request)
     if not uid_str:
         return web.json_response({"error": "Unauthorized"}, status=401)
 
@@ -1411,7 +1411,7 @@ async def api_crm_add(request):
 
 @routes.get("/api/crm/export")
 async def api_crm_export(request):
-    uid_str = request.query.get("uid")
+    uid_str = await get_auth_user_id(request)
     if not uid_str:
         return web.json_response({"error": "Unauthorized"}, status=401)
         
@@ -1428,13 +1428,18 @@ async def api_crm_export(request):
         content = output.getvalue()
         filename = f"crm_export_{uid_str}.csv"
         
-        return web.Response(
-            body=content.encode('utf-8'),
-            content_type='text/csv',
-            headers={
-                'Content-Disposition': f'attachment; filename="{filename}"'
-            }
-        )
+        content_bytes = content.encode('utf-8')
+        try:
+            await bot_client.send_file(
+                int(uid_str), 
+                io.BytesIO(content_bytes), 
+                filename=filename, 
+                caption="Ваш экспорт CRM базы 📂"
+            )
+            return web.json_response({"status": "ok", "message": "sent_via_telegram"})
+        except Exception as bot_err:
+            log.error(f"Failed to send file via bot: {bot_err}")
+            return web.json_response({"error": "Бот не смог отправить файл. Попробуйте позже."}, status=500)
     except Exception as e:
         log.error(f"CRM Export error: {e}")
         return web.json_response({"error": str(e)}, status=500)
@@ -1497,11 +1502,16 @@ async def api_run_mail(request):
     try:
         data = await request.json()
         text = str(data.get("text"))
+        provided_targets = data.get("targets") # Optional list of contacts
         
         udata = await db.get_user(uid_str)
         if not udata: return web.json_response({"error": "Not registered"}, status=404)
         
-        ml = await db.get_crm_contacts(uid_str)
+        if isinstance(provided_targets, list) and len(provided_targets) > 0:
+            ml = provided_targets
+        else:
+            ml = await db.get_crm_contacts(uid_str)
+            
         limit = min(int(udata.get("mail_limit", 50)), len(ml))
         
         if limit == 0: return web.json_response({"error": "Base is empty or limit 0"}, status=400)
