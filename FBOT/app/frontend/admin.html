@@ -112,6 +112,7 @@
   <body>
     <div class="header">
       <a href="/profile" class="back-btn">← Назад</a>
+      <button class="back-btn" style="background: var(--button-color); border: none; margin-left: auto;" onclick="addUser()">+ Добавить</button>
     </div>
 
     <input type="text" id="search" placeholder="Поиск по имени или телефону..." oninput="renderUsers()" />
@@ -193,6 +194,30 @@
             loadUsers();
           } else {
             showToast(data.error);
+          }
+        } catch (e) { showToast("Ошибка"); }
+      }
+
+      async function addUser() {
+        const phone = prompt("Введите номер телефона пользователя (например, +77001234567):");
+        if (!phone) return;
+
+        tg.HapticFeedback.impactOccurred("medium");
+        try {
+          const res = await fetch(`${API_BASE}/api/admin/add_user`, {
+            method: "POST",
+            headers: { 
+              "Content-Type": "application/json",
+              "X-Web-Token": webToken 
+            },
+            body: JSON.stringify({ phone })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            showToast("Пользователь добавлен!");
+            loadUsers();
+          } else {
+            showToast(data.error || "Ошибка при добавлении");
           }
         } catch (e) { showToast("Ошибка"); }
       }

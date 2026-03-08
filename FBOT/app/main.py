@@ -298,10 +298,10 @@ def make_watcher_handler(uid_str: str):
                 return
 
         if getattr(event, 'out', False):
-            return  # Игнорируем исходящие (свои) сообщения
+            return  # Игнорируем исходящие
 
         if getattr(event, 'is_private', False):
-            return  # Игнорируем личные переписки (ЛС), парсим только группы и каналы
+            return  # Только группы и каналы
 
         raw = event.raw_text or ""
         text = raw.strip()
@@ -313,28 +313,39 @@ def make_watcher_handler(uid_str: str):
         if not client:
             return
 
-        chat_title = getattr(getattr(event, "chat", None), "title", None) or str(event.chat_id)
+        chat = getattr(event, "chat", None)
+        chat_title = getattr(chat, "title", "") or str(event.chat_id)
+        chat_username = getattr(chat, "username", None)
         
-        # Фильтрация по каналам: получаем список всех каналов пользователя
+        # Фильтрация по каналам
         user_channels = await db.get_channels(uid_str)
-        # Если список каналов не пуст, ищем текущий чат в нем
         if user_channels:
             current_chat_id = event.chat_id
             relevant_channel = None
             for ch in user_channels:
-                if ch.get("channel_id") == current_chat_id:
+                cid = ch.get("channel_id")
+                clink = (ch.get("channel_link") or "").lower()
+                
+                # Сопоставление по ID (основной способ)
+                if cid is not None and int(cid) == current_chat_id:
                     relevant_channel = ch
                     break
-            
-            # Если канал не найден в списке CRM ИЛИ он найден, но выключен — игнорируем
+                
+                # Сопоставление по ссылке/username (резервный способ если ID нет в базе)
+                if chat_username and chat_username.lower() in clink:
+                    relevant_channel = ch
+                    break
+                
+                # Сопоставление по вхождению титула чата в ссылку (совсем крайний случай)
+                if chat_title and norm(chat_title) in clink:
+                    relevant_channel = ch
+                    break
+
             if not relevant_channel or not relevant_channel.get("enabled", True):
                 return
-        else:
-            # Если у пользователя вообще нет добавленных каналов, возможно, он еще ничего не настроил
-            # В данном контексте лучше игнорировать всё, так как поиск "по выбору" подразумевает наличие выбора.
-            return
-            
-        key = f"{uid_str}:{event.chat_id}:{event.id}"
+        
+        # Если дошли сюда — этот канал либо в списке разрешенных, либо список пуст (поиск везде)
+        log.info(f"[Watcher:{uid_str}] Message from '{chat_title}': {text[:50]}...")
 
         kw_norm = [norm(k) for k in u_data.get("keywords", DEFAULT_KEYWORDS)]
         neg_norm = [norm(n) for n in u_data.get("negative_words", DEFAULT_NEGATIVE_WORDS)]
@@ -423,9 +434,11 @@ def make_watcher_handler(uid_str: str):
                 
                 async def safe_b_send(tid_str, txt):
                     try:
-                        if str(tid_str).isdigit():
+                        # Если это Telegram ID (цифры), отправляем через бота
+                        if str(tid_str).replace("-", "").isdigit():
                             await bot_client.send_message(int(tid_str), txt)
-                    except: pass
+                    except Exception as e:
+                        log.debug(f"Notification failed for {tid_str}: {e}")
                 
                 asyncio.create_task(safe_b_send(uid_str, notify_txt))
                 for ad_id in ADMIN_IDS:
@@ -1590,6 +1603,22 @@ async def api_admin_update_access(request):
         if not new_expiry:
             return web.json_response({"error": "User not found or database pool error"}, status=404)
         return web.json_response({"status": "ok", "new_expiry": new_expiry.strftime("%Y-%m-%d %H:%M")})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+@routes.post("/api/admin/add_user")
+async def api_admin_add_user(request):
+    uid_str = await get_auth_user_id(request)
+    if not uid_str or not uid_str.isdigit() or int(uid_str) not in ADMIN_IDS:
+        return web.json_response({"error": "Forbidden"}, status=403)
+    try:
+        data = await request.json()
+        phone = data.get("phone")
+        if not phone:
+            return web.json_response({"error": "Missing phone"}, status=400)
+        
+        await db.admin_add_user(phone)
+        return web.json_response({"status": "ok"})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 

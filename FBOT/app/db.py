@@ -174,6 +174,17 @@ async def register_web_user(phone: str, password_hash: str):
             ON CONFLICT (phone) DO NOTHING
         """, uid, phone, password_hash, "[]", "[]", datetime.now().date())
 
+async def admin_add_user(phone: str):
+    if not pool: return None
+    uid = f"admin_{phone}"
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO users (uid, phone, keywords, negative_words, daily_date)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (phone) DO NOTHING
+        """, uid, phone, "[]", "[]", datetime.now().date())
+    return True
+
 async def link_telegram_to_phone(phone: str, uid: str, session_str: str, name: str = None, username: str = None):
     if not pool: return
     async with pool.acquire() as conn:
