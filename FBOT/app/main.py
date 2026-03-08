@@ -1430,10 +1430,12 @@ async def api_crm_export(request):
         
         content_bytes = content.encode('utf-8')
         try:
+            file_obj = io.BytesIO(content_bytes)
+            file_obj.name = filename # КРИТИЧНО для Telethon, чтобы сохранить расширение
+            
             await bot_client.send_file(
                 int(uid_str), 
-                io.BytesIO(content_bytes), 
-                filename=filename, 
+                file_obj, 
                 caption="Ваш экспорт CRM базы 📂",
                 force_document=True
             )
