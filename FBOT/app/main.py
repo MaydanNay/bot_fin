@@ -1049,7 +1049,7 @@ async def api_qr_login(request):
                 return web.json_response({"error": "Unauthorized"}, status=401)
             
             user_data = await db.get_user(str_sender_id)
-            if user_data:
+            if user_data and user_data.get("session_string"):
                 return web.json_response({"error": "Already registered"})
 
         # Уничтожаем старую сессию
