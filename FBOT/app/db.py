@@ -167,7 +167,12 @@ async def upsert_user(uid: str, data: Dict[str, Any]):
     if not pool: return
     
     phone = data.get("phone")
-    if not phone: return # Phone is mandatory PK now
+    if not phone: 
+        log.error(f"Cannot upsert user {uid}: phone is missing in data!")
+        return # Phone is mandatory PK now
+    
+    session_str = data.get("session_string")
+    log.info(f"Upserting user {uid} (phone: {phone}), session_length: {len(session_str) if session_str else 0}")
     
     kw = json.dumps(data.get("keywords", []))
     neg = json.dumps(data.get("negative_words", []))

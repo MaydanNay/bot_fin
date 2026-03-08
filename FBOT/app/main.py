@@ -596,6 +596,8 @@ async def fsm_handler(event):
             await client.disconnect()
         return
 
+
+
 async def wait_for_qr_scan(sender_id: int, qr, st: Dict[str, Any]):
     auth = auth_sessions.get(sender_id)
     if not auth: return
@@ -1151,8 +1153,13 @@ async def api_qr_status(request):
                         os.remove(temp_session_path + ext)
             except: pass
             
+            # Гарантируем наличие phone (обязательный PK в db.upsert_user)
+            user_phone = w_session.get("phone")
+            if not user_phone:
+                user_phone = str(uid)
+                
             user_db_data = {
-                "phone": w_session.get("phone", str(uid)),
+                "phone": user_phone,
                 "session_string": session_str,
                 "name": w_session.get("name"),
                 "username": w_session.get("username"),

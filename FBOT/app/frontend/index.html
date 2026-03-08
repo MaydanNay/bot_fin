@@ -298,7 +298,7 @@
         </div>
         <div class="instructions" id="auth-instructions">Подготовка...</div>
         <div id="qrcode-container"></div>
-        <div class="qr-timer-container" id="qr-timer-wrapper" style="display: none;">
+        <div class="qr-timer-container" id="qr-timer-wrapper" style="display: none; text-align: center; width: 100%; margin-top: 10px;">
           Обновление через: <span id="qr-timer-val">30</span>с
         </div>
         <div id="password-input-container" style="display: none;">
@@ -553,7 +553,8 @@
             }
             
             new QRCode(qrContainer, { text: data.url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.H });
-            document.getElementById("auth-instructions").innerHTML = "Отсканируйте код в <b>Настройки ➡️ Устройства</b>";
+            const arrowIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin:0 4px;"><polyline points="9 18 15 12 9 6"></polyline></svg>';
+            document.getElementById("auth-instructions").innerHTML = `Отсканируйте код в <b>Настройки ${arrowIcon} Устройства</b>`;
             document.getElementById("qr-timer-wrapper").style.display = "flex";
             
             startCountdown(30);
