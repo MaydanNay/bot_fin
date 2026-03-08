@@ -444,6 +444,13 @@
       </button>
     </div>
 
+    <div style="padding: 0 16px 20px;">
+      <button class="btn-primary" onclick="collectFromChats()" style="width: 100%; border-radius: 18px; padding: 14px; font-size: 14px; background: var(--secondary-bg-color); color: var(--button-color); border: 1px solid rgba(139, 92, 246, 0.2); display: flex; align-items: center; justify-content: center; gap: 8px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+        <span id="btn-collect-text">Собрать контакты из чатов</span>
+      </button>
+    </div>
+
 
 
     <div class="search-wrap">
@@ -570,6 +577,7 @@
           modalHint.innerText = "Введите контакты по одному на строку (номер телефона или @username)";
           textarea.placeholder = "@username1\n79991234321\n@username2";
           if (btnAddText) btnAddText.innerText = "Добавить контакты";
+          document.getElementById("btn-collect-text").innerText = "Собрать контакты из чатов";
         } else {
           label.innerText = "Всего каналов";
           input.placeholder = "Поиск каналов...";
@@ -577,6 +585,7 @@
           modalHint.innerText = "Введите ссылки на каналы или @username по одному на строку";
           textarea.placeholder = "https://t.me/channel1\n@channel2\nhttps://t.me/+join_link";
           if (btnAddText) btnAddText.innerText = "Добавить каналы";
+          document.getElementById("btn-collect-text").innerText = "Собрать каналы из чатов";
         }
         
         tg.HapticFeedback.impactOccurred("light");
@@ -754,6 +763,46 @@
         await loadData();
         document.getElementById("loading").style.display = "none";
       })();
+
+      async function collectFromChats() {
+        tg.HapticFeedback.impactOccurred("medium");
+        tg.showConfirm(`Вы действительно хотите собрать ${activeTab === "contacts" ? 'контакты' : 'каналы'} из всех ваших диалогов? Это может занять некоторое время.`, async (ok) => {
+          if (!ok) return;
+          
+          tg.MainButton.text = "Сбор данных...";
+          tg.MainButton.showProgress();
+          tg.MainButton.show();
+          
+          try {
+            const res = await fetch(`${API_BASE}/api/collect_dialogs`, {
+              method: "POST",
+              headers: get_auth_headers(),
+              body: JSON.stringify({ type: activeTab })
+            });
+            const data = await res.json();
+            if (res.ok) {
+              tg.showAlert(`Готово! Найдено новых элементов: ${data.added}`);
+              showToast(`Добавлено: ${data.added}`);
+              loadData();
+            } else {
+              showToast(data.error || "Ошибка при сборе", true);
+              if (data.error === "Userbot offline") {
+                tg.showAlert("Ваш юзербот оффлайн. Сначала подключите его в Профиле или через /start в боте.");
+              }
+            }
+          } catch (e) {
+            showToast("Ошибка сети", true);
+          } finally {
+            tg.MainButton.hideProgress();
+            tg.MainButton.hide();
+          }
+        });
+      }
+
+      function get_auth_headers() {
+        return typeof getAuthHeaders === 'function' ? getAuthHeaders() : { "Content-Type": "application/json" };
+      }
+
     </script>
   </body>
 </html>

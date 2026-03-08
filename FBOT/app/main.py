@@ -284,196 +284,207 @@ async def download_user_avatar(uid_str: str) -> Optional[str]:
 # Эта функция создает обработчик конкретно для данного пользователя (uid)
 def make_watcher_handler(uid_str: str):
     async def watcher(event):
-        u_data = await db.get_user(uid_str)
-        if not u_data or not u_data.get("enabled"):
-            return
+        try:
+            # key используется для логов и аудит записей (как в /status или в выводе)
+            key = uid_str 
+            u_data = await db.get_user(uid_str)
+            if not u_data or not u_data.get("enabled"):
+                return
             
-        # Check expiry
-        expires_at = u_data.get("expires_at")
-        if expires_at:
-            if expires_at.tzinfo:
-                if expires_at < datetime.now().replace(tzinfo=expires_at.tzinfo):
+            # Check expiry
+            expires_at = u_data.get("expires_at")
+            if expires_at:
+                now = datetime.now()
+                if expires_at.tzinfo:
+                    now = now.replace(tzinfo=expires_at.tzinfo)
+                if expires_at < now:
                     return
-            elif expires_at < datetime.now():
+
+            if getattr(event, 'out', False):
+                return  # Игнорируем исходящие
+
+            if getattr(event, 'is_private', False):
+                return  # Только группы и каналы
+
+            raw = event.raw_text or ""
+            text = raw.strip()
+            if not text:
                 return
 
-        if getattr(event, 'out', False):
-            return  # Игнорируем исходящие
-
-        if getattr(event, 'is_private', False):
-            return  # Только группы и каналы
-
-        raw = event.raw_text or ""
-        text = raw.strip()
-        if not text:
-            return
-
-        tnorm = norm(text)
-        client = user_clients.get(uid_str)
-        if not client:
-            return
-
-        chat = getattr(event, "chat", None)
-        chat_title = getattr(chat, "title", "") or str(event.chat_id)
-        chat_username = getattr(chat, "username", None)
-        
-        # Фильтрация по каналам
-        user_channels = await db.get_channels(uid_str)
-        if user_channels:
-            current_chat_id = event.chat_id
-            relevant_channel = None
-            for ch in user_channels:
-                cid = ch.get("channel_id")
-                clink = (ch.get("channel_link") or "").lower()
-                
-                # Сопоставление по ID (основной способ)
-                if cid is not None and int(cid) == current_chat_id:
-                    relevant_channel = ch
-                    break
-                
-                # Сопоставление по ссылке/username (резервный способ если ID нет в базе)
-                if chat_username and chat_username.lower() in clink:
-                    relevant_channel = ch
-                    break
-                
-                # Сопоставление по вхождению титула чата в ссылку (совсем крайний случай)
-                if chat_title and norm(chat_title) in clink:
-                    relevant_channel = ch
-                    break
-
-            if not relevant_channel or not relevant_channel.get("enabled", True):
+            tnorm = norm(text)
+            client = user_clients.get(uid_str)
+            if not client:
                 return
+
+            chat = getattr(event, "chat", None)
+            chat_title = getattr(chat, "title", "") or str(event.chat_id)
+            chat_username = getattr(chat, "username", None)
+            
+            # Фильтрация по каналам
+            user_channels = await db.get_channels(uid_str)
+            if user_channels:
+                current_chat_id = event.chat_id
+                relevant_channel = None
+                for ch in user_channels:
+                    cid = ch.get("channel_id")
+                    clink = (ch.get("channel_link") or "").lower()
+                    
+                    # Сопоставление по ID (основной способ)
+                    if cid is not None and int(cid) == current_chat_id:
+                        relevant_channel = ch
+                        break
+                    
+                    # Сопоставление по ссылке/username (резервный способ если ID нет в базе)
+                    if chat_username and chat_username.lower() in clink:
+                        relevant_channel = ch
+                        break
+                    
+                    # Сопоставление по вхождению титула чата в ссылку (совсем крайний случай)
+                    if chat_title and norm(chat_title) in clink:
+                        relevant_channel = ch
+                        break
+
+                if not relevant_channel or not relevant_channel.get("enabled", True):
+                    return
         
-        # Если дошли сюда — этот канал либо в списке разрешенных, либо список пуст (поиск везде)
-        log.info(f"[Watcher:{uid_str}] Message from '{chat_title}': {text[:50]}...")
+            # Если дошли сюда — этот канал либо в списке разрешенных, либо список пуст (поиск везде)
+            log.info(f"[Watcher:{uid_str}] Message from '{chat_title}': {text[:50]}...")
 
-        kw_norm = [norm(k) for k in u_data.get("keywords", DEFAULT_KEYWORDS)]
-        neg_norm = [norm(n) for n in u_data.get("negative_words", DEFAULT_NEGATIVE_WORDS)]
+            keywords = u_data.get("keywords") or DEFAULT_KEYWORDS
+            negwords = u_data.get("negative_words") or DEFAULT_NEGATIVE_WORDS
+            
+            kw_norm = [norm(k) for k in keywords]
+            neg_norm = [norm(n) for n in negwords]
 
-        has_kw = any(k in tnorm for k in kw_norm)
-        if not has_kw:
-            return # Быстрый игнор если нет ни одного ключевика
+            has_kw = any(k in tnorm for k in kw_norm)
+            if not has_kw:
+                return # Быстрый игнор если нет ни одного ключевика
 
-        neg = any(n in tnorm for n in neg_norm)
-        
-        used_openai = False
-        ai_ok = False
-        ok = False
-        reason = "none"
-
-        if neg:
-            # Жесткое отсечение по минус-словам без траты денег на OpenAI
+            neg = any(n in tnorm for n in neg_norm)
+            
+            used_openai = False
+            ai_ok = False
             ok = False
-            reason = "negative_word_match"
-        elif REQ_VERBS.search(tnorm):
-            # Есть ключевик и подходящий глагол - 100% лид
-            ok = True
-            reason = "primary_pass"
-        else:
-            # Есть ключевик, но нет глагола - отдаем нейросети
-            used_openai = True
-            ai_ok = await openai_gate(text)
-            ok = ai_ok
-            reason = "openai_yes" if ai_ok else "openai_no"
+            reason = "none"
 
-        m = re.search(r"@([A-Za-z0-9_]{4,32})", raw) or re.search(r"t\.me/([A-Za-z0-9_]{4,32})", raw, re.I)
-        target = None
-        sender = await event.get_sender()
-        
-        if m:
-            target = f"@{m.group(1)}"
-        elif sender and getattr(sender.__class__, '__name__', '') == 'User' and not getattr(sender, 'bot', False):
-            if getattr(sender, "username", None):
-                target = f"@{sender.username}"
+            if neg:
+                # Жесткое отсечение по минус-словам без траты денег на OpenAI
+                ok = False
+                reason = "negative_word_match"
+            elif REQ_VERBS.search(tnorm):
+                # Есть ключевик и подходящий глагол - 100% лид
+                ok = True
+                reason = "primary_pass"
             else:
-                target = sender.id
+                # Есть ключевик, но нет глагола - отдаем нейросети
+                used_openai = True
+                ai_ok = await openai_gate(text)
+                ok = ai_ok
+                reason = "openai_yes" if ai_ok else "openai_no"
 
-        final = "skip"
-        send_error = None
-
-        if ok and target:
-            delay = random.uniform(MIN_DELAY, MAX_DELAY)
-            await asyncio.sleep(delay)
-            try:
-                reply_text = str(u_data.get("reply_text") or DEFAULT_REPLY)
-                # Media files aren't in DB yet, will implement later if needed or skip for now
-                # media_files = list((u_data.get("media_files") or [])[:3])
-                media_files = []
-                if media_files:
-                    first, rest = media_files[0], media_files[1:]
-                    await client.send_file(target, first, caption=reply_text)
-                    for mf in rest:
-                        try:
-                            await client.send_file(target, mf)
-                            await asyncio.sleep(0.5)
-                        except: pass
+            m = re.search(r"@([A-Za-z0-9_]{4,32})", raw) or re.search(r"t\.me/([A-Za-z0-9_]{4,32})", raw, re.I)
+            target = None
+            sender = await event.get_sender()
+            
+            if m:
+                target = f"@{m.group(1)}"
+            elif sender and getattr(sender.__class__, '__name__', '') == 'User' and not getattr(sender, 'bot', False):
+                if getattr(sender, "username", None):
+                    target = f"@{sender.username}"
                 else:
-                    await client.send_message(target, reply_text)
-                final = "sent"
-                
-                # Сохраняем статистику и добавляем в базу рассылки
-                today_str = str(datetime.now().date())
-                
-                # Fetch fresh data for update
-                current_u_data = await db.get_user(uid_str)
-                if current_u_data:
-                    current_daily_date = current_u_data.get("daily_date", "")
-                    current_daily_sent = current_u_data.get("daily_sent", 0)
-                    
-                    if current_daily_date != today_str:
-                        await db.update_user_field(uid_str, "daily_date", datetime.now().date())
-                        await db.update_user_field(uid_str, "daily_sent", 1)
+                    target = sender.id
+
+            final = "skip"
+            send_error = None
+
+            if ok and target:
+                delay = random.uniform(MIN_DELAY, MAX_DELAY)
+                await asyncio.sleep(delay)
+                try:
+                    reply_text = str(u_data.get("reply_text") or DEFAULT_REPLY)
+                    # Media files aren't in DB yet, will implement later if needed or skip for now
+                    # media_files = list((u_data.get("media_files") or [])[:3])
+                    media_files = []
+                    if media_files:
+                        first, rest = media_files[0], media_files[1:]
+                        await client.send_file(target, first, caption=reply_text)
+                        for mf in rest:
+                            try:
+                                await client.send_file(target, mf)
+                                await asyncio.sleep(0.5)
+                            except: pass
                     else:
-                        await db.update_user_field(uid_str, "daily_sent", current_daily_sent + 1)
-                
-                await db.add_crm_contacts(uid_str, [target])
-                
-                # Уведомляем админов и самого пользователя
-                who = target if isinstance(target, str) else f"id:{target}"
-                notify_txt = f"✅ Отклик отправлен {who} от имени {u_data.get('phone')} (чат: {chat_title})"
-                
-                async def safe_b_send(tid_str, txt):
-                    try:
-                        # Если это Telegram ID (цифры), отправляем через бота
-                        if str(tid_str).replace("-", "").isdigit():
-                            await bot_client.send_message(int(tid_str), txt)
-                    except Exception as e:
-                        log.debug(f"Notification failed for {tid_str}: {e}")
-                
-                asyncio.create_task(safe_b_send(uid_str, notify_txt))
-                for ad_id in ADMIN_IDS:
-                    asyncio.create_task(safe_b_send(ad_id, f"[SaaS] {notify_txt}"))
+                        await client.send_message(target, reply_text)
+                    final = "sent"
                     
-            except FloodWaitError as e: send_error = f"FloodWait {e.seconds}s"
-            except (UserPrivacyRestrictedError, UserIsBlockedError): send_error = "privacy/blocked"
-            except Exception as e: send_error = str(e)
-        elif ok and not target:
-            reason = "no_target"
+                    # Сохраняем статистику и добавляем в базу рассылки
+                    today_str = str(datetime.now().date())
+                    
+                    # Fetch fresh data for update
+                    current_u_data = await db.get_user(uid_str)
+                    if current_u_data:
+                        current_daily_date = current_u_data.get("daily_date", "")
+                        current_daily_sent = current_u_data.get("daily_sent", 0)
+                        
+                        if current_daily_date != today_str:
+                            await db.update_user_field(uid_str, "daily_date", datetime.now().date())
+                            await db.update_user_field(uid_str, "daily_sent", 1)
+                        else:
+                            await db.update_user_field(uid_str, "daily_sent", current_daily_sent + 1)
+                    
+                    await db.add_crm_contacts(uid_str, [target])
+                    
+                    # Уведомляем админов и самого пользователя
+                    who = target if isinstance(target, str) else f"id:{target}"
+                    notify_txt = f"✅ Отклик отправлен {who} от имени {u_data.get('phone')} (чат: {chat_title})"
+                    
+                    async def safe_b_send(tid_str, txt):
+                        try:
+                            # Если это Telegram ID (цифры), отправляем через бота
+                            if str(tid_str).replace("-", "").isdigit():
+                                await bot_client.send_message(int(tid_str), txt)
+                        except Exception as e:
+                            log.debug(f"Notification failed for {tid_str}: {e}")
+                    
+                    asyncio.create_task(safe_b_send(uid_str, notify_txt))
+                    for ad_id in ADMIN_IDS:
+                        asyncio.create_task(safe_b_send(ad_id, f"[SaaS] {notify_txt}"))
+                        
+                except FloodWaitError as e: send_error = f"FloodWait {e.seconds}s"
+                except (UserPrivacyRestrictedError, UserIsBlockedError): send_error = "privacy/blocked"
+                except Exception as e: 
+                    send_error = str(e)
+                    log.error(f"[Watcher:{uid_str}] Error sending message: {e}")
+            elif ok and not target:
+                reason = "no_target"
 
-        # Аудит
-        await write_audit({
-            "key": key,
-            "uid": uid_str,
-            "chat_id": int(event.chat_id),
-            "chat_title": chat_title,
-            "preview": preview(raw, 220),
-            "primary": ok,
-            "negative": bool(neg),
-            "used_openai": used_openai,
-            "openai_ok": ai_ok,
-            "decision": final,
-            "reason": reason,
-            "target": target if isinstance(target, str) else (int(target) if target else None),
-            "send_error": send_error,
-        })
+            # Аудит
+            await write_audit({
+                "key": key,
+                "uid": uid_str,
+                "chat_id": int(event.chat_id),
+                "chat_title": chat_title,
+                "preview": preview(raw, 220),
+                "primary": ok,
+                "negative": bool(neg),
+                "used_openai": used_openai,
+                "openai_ok": ai_ok,
+                "decision": final,
+                "reason": reason,
+                "target": target if isinstance(target, str) else (int(target) if target else None),
+                "send_error": send_error,
+            })
 
-        if u_data.get("tap"):
-            mark = "🟢" if final == "sent" else "🟡" if ok and final != "sent" else "⚪"
-            txt = f"{mark} [{key}] {chat_title}\n▶ {preview(raw, 200)}\ndecision: {final} | target: {target} | err: {send_error}"
-            try:
-                if str(uid_str).isdigit():
-                    await bot_client.send_message(int(uid_str), txt)
-            except: pass
+            if u_data.get("tap"):
+                mark = "🟢" if final == "sent" else "🟡" if ok and final != "sent" else "⚪"
+                txt = f"{mark} [{key}] {chat_title}\n▶ {preview(raw, 200)}\ndecision: {final} | target: {target} | err: {send_error}"
+                try:
+                    if str(uid_str).isdigit():
+                        await bot_client.send_message(int(uid_str), txt)
+                except: pass
+        
+        except Exception as e:
+            log.error(f"[Watcher:{uid_str}] Critical watcher error: {e}", exc_info=True)
 
     return watcher
 
@@ -763,6 +774,34 @@ async def cmd_user_help(event):
         "/collect_dialogs — собрать переписки в CRM\n"
         "/set_mail_limit <число> — лимит отправки за один раз\n"
         "/run_mail <Текст> — запустить рассылку по базе"
+    )
+    await event.respond(txt)
+
+@bot_client.on(events.NewMessage(pattern=r"^/status$"))
+async def cmd_user_status(event):
+    uid_str = str(event.sender_id)
+    user_data = await db.get_user(uid_str)
+    if not user_data: return
+    
+    enabled = "✅ ВКЛЮЧЕН" if user_data.get("enabled") else "⏸️ ВЫКЛЮЧЕН"
+    channels = await db.get_channels(uid_str)
+    ch_count = len(channels)
+    kw_count = len(user_data.get("keywords", []))
+    
+    expires_at = user_data.get("expires_at")
+    if expires_at:
+        exp_str = expires_at.strftime("%d.%m.%Y %H:%M")
+    else:
+        exp_str = "Безлимитный"
+
+    txt = (
+        f"📊 **Твой статус:**\n"
+        f"Статус воркера: {enabled}\n"
+        f"Подписка до: {exp_str}\n"
+        f"Отслеживается каналов: {ch_count}\n"
+        f"Ключевых слов: {kw_count}\n"
+        f"Отправлено сегодня: {user_data.get('daily_sent', 0)}\n\n"
+        f"Используй /help для настройки."
     )
     await event.respond(txt)
 
@@ -1620,6 +1659,65 @@ async def api_admin_add_user(request):
         await db.admin_add_user(phone)
         return web.json_response({"status": "ok"})
     except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+@routes.post("/api/collect_dialogs")
+async def api_collect_dialogs(request):
+    uid_str = await get_auth_user_id(request)
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    
+    try:
+        data = await request.json()
+        ctype = data.get("type", "contacts") # "contacts" or "channels"
+        
+        client = user_clients.get(uid_str)
+        if not client:
+            return web.json_response({"error": "Userbot offline"}, status=400)
+            
+        results = []
+        if ctype == "contacts":
+            async for dialog in client.iter_dialogs(limit=None):
+                if dialog.is_user and not dialog.entity.bot:
+                    if dialog.entity.username:
+                        results.append(f"@{dialog.entity.username}")
+                    elif dialog.entity.phone:
+                        results.append(f"+{dialog.entity.phone}")
+                    else:
+                        results.append(str(dialog.entity.id))
+            
+            my_id = str((await client.get_me()).id)
+            results = [c for c in results if str(c) != my_id]
+            added = await db.add_crm_contacts(uid_str, results)
+            return web.json_response({"status": "ok", "added": added})
+            
+        elif ctype == "channels":
+            async for dialog in client.iter_dialogs(limit=None):
+                if dialog.is_channel or dialog.is_group:
+                    # Пытаемся получить красивую ссылку
+                    link = None
+                    if getattr(dialog.entity, 'username', None):
+                        link = f"https://t.me/{dialog.entity.username}"
+                    elif hasattr(dialog.entity, 'participants_count'): # Обычно для мегагрупп/каналов без юзернейма
+                        # Если нет юзернейма, мы не всегда можем получить инвайт-ссылку без прав
+                        # Но можем сохранить ID или попробовать поискать в БД уже имеющиеся
+                        pass
+                    
+                    if link:
+                        results.append(link)
+            
+            # Добавляем найденные ссылки в список каналов пользователя
+            added = 0
+            for l in results:
+                # add_channel в db.py проверяет дубликаты
+                res = await db.add_channel(uid_str, l)
+                if res: added += 1
+                
+            return web.json_response({"status": "ok", "added": added})
+            
+        return web.json_response({"error": "Invalid type"}, status=400)
+    except Exception as e:
+        log.error(f"API collect error for {uid_str}: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 @routes.get("/api/channels")
