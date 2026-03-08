@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import logging
 import asyncio
@@ -26,7 +27,9 @@ pool: Optional[asyncpg.Pool] = None
 
 async def init_db():
     global pool
-    log.info(f"Initializing PostgreSQL pool for {DB_NAME} at {DB_HOST}...")
+    # Маскируем пароль для безопасности
+    masked_url = re.sub(r':([^/@]+)@', ':***@', DATABASE_URL)
+    log.info(f"Initializing PostgreSQL pool. URL: {masked_url}, DB_NAME: {DB_NAME}")
     try:
         pool = await asyncpg.create_pool(dsn=DATABASE_URL, min_size=1, max_size=20)
     except Exception as e:
@@ -94,9 +97,17 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS channels (
                 uid VARCHAR(64) REFERENCES users(uid) ON DELETE CASCADE,
                 channel_link VARCHAR(255),
+                channel_id BIGINT,
+                enabled BOOLEAN DEFAULT TRUE,
                 PRIMARY KEY (uid, channel_link)
             );
         """)
+        # Migration: ensure channel_id and enabled exist
+        try:
+            await conn.execute("ALTER TABLE channels ADD COLUMN IF NOT EXISTS channel_id BIGINT;")
+            await conn.execute("ALTER TABLE channels ADD COLUMN IF NOT EXISTS enabled BOOLEAN DEFAULT TRUE;")
+        except Exception as e:
+            log.warning(f"Migration for channels table failed or already applied: {e}")
         
         # Admins
         await conn.execute("""
@@ -135,9 +146,13 @@ async def _process_user_row(user_record):
 
 async def get_user(uid: str) -> Optional[Dict[str, Any]]:
     if not pool: return None
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT * FROM users WHERE uid = $1", uid)
-        return await _process_user_row(row)
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM users WHERE uid = $1", uid)
+            return await _process_user_row(row)
+    except Exception as e:
+        log.error(f"Error in get_user({uid}): {e}")
+        raise e
 
 async def get_user_by_phone(phone: str) -> Optional[Dict[str, Any]]:
     if not pool: return None
@@ -274,26 +289,40 @@ async def get_crm_count(uid: str) -> int:
 
 # --- CHANNELS ---
 
-async def add_channel(uid: str, link: str):
+async def add_channel(uid: str, link: str, channel_id: int = None):
     if not pool: return
     async with pool.acquire() as conn:
-        await conn.execute("INSERT INTO channels (uid, channel_link) VALUES ($1, $2) ON CONFLICT (uid, channel_link) DO NOTHING", uid, link)
+        await conn.execute("""
+            INSERT INTO channels (uid, channel_link, channel_id, enabled) 
+            VALUES ($1, $2, $3, TRUE) 
+            ON CONFLICT (uid, channel_link) DO UPDATE SET channel_id = EXCLUDED.channel_id
+        """, uid, link, channel_id)
 
 async def remove_channel(uid: str, link: str):
     if not pool: return
     async with pool.acquire() as conn:
         await conn.execute("DELETE FROM channels WHERE uid = $1 AND channel_link = $2", uid, link)
 
-async def get_channels(uid: str, query: str = "") -> List[str]:
+async def get_channels(uid: str, query: str = "") -> List[Dict[str, Any]]:
     if not pool: return []
     async with pool.acquire() as conn:
         if query:
-            sql = "SELECT channel_link FROM channels WHERE uid = $1 AND LOWER(channel_link) LIKE $2"
+            sql = "SELECT channel_link, channel_id, enabled FROM channels WHERE uid = $1 AND LOWER(channel_link) LIKE $2"
             rows = await conn.fetch(sql, uid, f"%{query.lower()}%")
         else:
-            sql = "SELECT channel_link FROM channels WHERE uid = $1"
+            sql = "SELECT channel_link, channel_id, enabled FROM channels WHERE uid = $1"
             rows = await conn.fetch(sql, uid)
-        return [str(r['channel_link']) for r in rows]
+        return [dict(r) for r in rows]
+
+async def toggle_channel(uid: str, link: str, enabled: bool):
+    if not pool: return
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE channels SET enabled = $1 WHERE uid = $2 AND channel_link = $3", enabled, uid, link)
+
+async def toggle_all_channels(uid: str, enabled: bool):
+    if not pool: return
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE channels SET enabled = $1 WHERE uid = $2", enabled, uid)
 
 # --- TOKENS ---
 

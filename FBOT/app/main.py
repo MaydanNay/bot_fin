@@ -216,17 +216,25 @@ async def ensure_join(client: TelegramClient, link_or_at: str) -> Optional[int]:
             ent = await client.get_entity(uname)
             return int(get_peer_id(ent))
         elif "t.me/+" in link or "joinchat/" in link:
-            hash_ = link.split("t.me/")[-1]
-            hash_ = hash_.split("+", 1)[-1] if "+" in hash_ else hash_.rsplit("/", 1)[-1]
             try:
-                res = await client(ImportChatInviteRequest(hash_))
-                if res and getattr(res, "chats", None):
-                    for ch in res.chats:
-                        try: return int(get_peer_id(ch))
-                        except Exception: continue
-            except UserAlreadyParticipantError:
-                pass
-            return None
+                # Telethon get_entity often works for invite links if already joined
+                ent = await client.get_entity(link)
+                return int(get_peer_id(ent))
+            except Exception:
+                # If not joined, try to join
+                hash_ = link.split("t.me/")[-1]
+                hash_ = hash_.split("+", 1)[-1] if "+" in hash_ else hash_.rsplit("/", 1)[-1]
+                try:
+                    res = await client(ImportChatInviteRequest(hash_))
+                    if res and getattr(res, "chats", None):
+                        for ch in res.chats:
+                            try: return int(get_peer_id(ch))
+                            except Exception: continue
+                except UserAlreadyParticipantError:
+                    # If already participant but get_entity failed, we can't do much without more info
+                    # but usually get_entity(link) works for joined users.
+                    pass
+                return None
         else:
             if link.startswith("https://t.me/"):
                 link = link.split("https://t.me/")[-1].strip("/")
@@ -297,6 +305,26 @@ def make_watcher_handler(uid_str: str):
             return
 
         chat_title = getattr(getattr(event, "chat", None), "title", None) or str(event.chat_id)
+        
+        # Фильтрация по каналам: получаем список всех каналов пользователя
+        user_channels = await db.get_channels(uid_str)
+        # Если список каналов не пуст, ищем текущий чат в нем
+        if user_channels:
+            current_chat_id = event.chat_id
+            relevant_channel = None
+            for ch in user_channels:
+                if ch.get("channel_id") == current_chat_id:
+                    relevant_channel = ch
+                    break
+            
+            # Если канал не найден в списке CRM ИЛИ он найден, но выключен — игнорируем
+            if not relevant_channel or not relevant_channel.get("enabled", True):
+                return
+        else:
+            # Если у пользователя вообще нет добавленных каналов, возможно, он еще ничего не настроил
+            # В данном контексте лучше игнорировать всё, так как поиск "по выбору" подразумевает наличие выбора.
+            return
+            
         key = f"{uid_str}:{event.chat_id}:{event.id}"
 
         kw_norm = [norm(k) for k in u_data.get("keywords", DEFAULT_KEYWORDS)]
@@ -1504,6 +1532,7 @@ async def api_channels_list(request):
     try:
         q = request.query.get("q", "").strip()
         channels = await db.get_channels(uid_str, query=q)
+        # channels теперь список словарей [{"channel_link": "...", "channel_id": ..., "enabled": ...}, ...]
         return web.json_response({"channels": channels})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -1531,9 +1560,8 @@ async def api_channels_add(request):
             link = link.strip()
             if not link: continue
             cid = await ensure_join(client, link)
-            if cid:
-                await db.add_channel(uid_str, link)
-                added_count += 1
+            await db.add_channel(uid_str, link, channel_id=cid)
+            added_count += 1
                 
         return web.json_response({"status": "ok", "added": added_count})
     except Exception as e:
@@ -1551,6 +1579,28 @@ async def api_channels_delete(request):
             return web.json_response({"error": "No channel provided"}, status=400)
             
         await db.remove_channel(uid_str, link)
+        return web.json_response({"status": "ok"})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+@routes.post("/api/channels/toggle")
+async def api_channels_toggle(request):
+    uid_str = await get_auth_user_id(request)
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    try:
+        data = await request.json()
+        link = data.get("link")
+        enabled = data.get("enabled")
+        all_channels = data.get("all", False)
+
+        if all_channels:
+            await db.toggle_all_channels(uid_str, enabled)
+        elif link is not None:
+            await db.toggle_channel(uid_str, link, enabled)
+        else:
+            return web.json_response({"error": "Missing link or all flag"}, status=400)
+
         return web.json_response({"status": "ok"})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
