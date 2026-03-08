@@ -1434,7 +1434,8 @@ async def api_crm_export(request):
                 int(uid_str), 
                 io.BytesIO(content_bytes), 
                 filename=filename, 
-                caption="Ваш экспорт CRM базы 📂"
+                caption="Ваш экспорт CRM базы 📂",
+                force_document=True
             )
             return web.json_response({"status": "ok", "message": "sent_via_telegram"})
         except Exception as bot_err:

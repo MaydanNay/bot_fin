@@ -400,13 +400,9 @@
     </div>
 
     <div class="stats-bar">
-      <div class="stat-card">
+      <div class="stat-card" style="grid-column: span 2;">
         <div class="stat-val" id="stat-total">0</div>
-        <div class="stat-label">Всего</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-val" id="stat-shown">0</div>
-        <div class="stat-label">Найдено</div>
+        <div class="stat-label">Всего контактов</div>
       </div>
     </div>
 
@@ -526,7 +522,6 @@
 
       function renderContacts(list) {
         const el = document.getElementById("contacts-list");
-        document.getElementById("stat-shown").innerText = list.length;
         if (list.length === 0) {
           el.innerHTML = `<div class="empty-state"><div class="empty-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5"><path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4"/><path d="M14 2v5h5"/><path d="M2 15h10"/><path d="m9 18 3-3-3-3"/></svg>
