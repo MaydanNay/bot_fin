@@ -1104,7 +1104,12 @@ async def get_auth_user_id(request) -> Optional[str]:
         
     # 2. Браузер (по токену)
     if web_token:
-        return await db.get_uid_by_token(web_token)
+        uid = await db.get_uid_by_token(web_token)
+        if uid:
+            log.debug(f"Auth: UID {uid} found via web_token")
+            return uid
+        else:
+            log.warning(f"Auth: Token {web_token[:8]}... invalid or expired")
         
     return None
 
@@ -1263,12 +1268,10 @@ async def api_qr_status(request):
             }
             await db.upsert_user(uid_str, user_db_data)
             
-            # Если гость - создаем веб-токен
-            if w_session.get("is_guest"):
-                token = str(uuid.uuid4())
-                # Используем phone как ключ для связи (в FK к users)
-                await db.set_web_token(token, user_db_data["phone"])
-                w_session["web_token"] = token
+            # Создаем или обновляем веб-токен для всех входов через QR (браузер)
+            token = str(uuid.uuid4())
+            await db.set_web_token(token, user_db_data["phone"])
+            w_session["web_token"] = token
             
             # Если админ
             if w_session.get("phone") in HARDCODED_ADMIN_PHONES:

@@ -226,6 +226,19 @@
       #auth-screen { background: #ffffff; border: 1px solid var(--border-color); border-radius: 24px; padding: 32px 24px; text-align: center; width: 100%; max-width: 360px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.1); }
       #qrcode-container { background: white; padding: 20px; border-radius: 24px; margin: 24px auto; display: flex; justify-content: center; align-items: center; width: fit-content; min-width: 200px; min-height: 200px; }
       #qrcode-container img { max-width: 100%; height: auto !important; }
+      .btn-deep-link {
+        display: none;
+        background: var(--button-color);
+        color: white;
+        border: none;
+        border-radius: 16px;
+        padding: 14px;
+        width: 100%;
+        font-weight: 700;
+        margin-top: 16px;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
+      }
       
       /* Global App Loader */
       #app-loader {
@@ -318,6 +331,7 @@
         <div class="qr-timer-container" id="qr-timer-wrapper" style="display: none; text-align: center; width: 100%; margin-top: 10px;">
           Обновление через: <span id="qr-timer-val">30</span>с
         </div>
+        <button id="btn-deep-link" class="btn-deep-link" onclick="openDeepLink()">💎 Войти на этом устройстве</button>
         <div id="password-input-container" style="display: none;">
           <label>Введите 2FA пароль:</label>
           <input type="password" id="2fa-password" style="margin-bottom: 16px" placeholder="Ваш пароль" />
@@ -468,6 +482,7 @@
       let _currentSessionId = null;
       let _qrInterval = null;
       let _timerInterval = null;
+      let _currentQRUrl = null;
 
       const powerToggle = document.getElementById("power-toggle");
       const replyText = document.getElementById("reply-text");
@@ -613,6 +628,9 @@
             }
             
             new QRCode(qrContainer, { text: data.url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.H });
+            _currentQRUrl = data.url;
+            document.getElementById("btn-deep-link").style.display = "block";
+
             const arrowIcon = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block; vertical-align:middle; margin:0 4px;"><polyline points="9 18 15 12 9 6"></polyline></svg>';
             document.getElementById("auth-instructions").innerHTML = `Отсканируйте код в <b>Настройки ${arrowIcon} Устройства</b>`;
             document.getElementById("qr-timer-wrapper").style.display = "block";
@@ -621,6 +639,12 @@
             pollQRStatus(data.session_id);
         } catch (e) {
              document.getElementById("auth-instructions").innerText = "Ошибка загрузки QR";
+        }
+      }
+
+      function openDeepLink() {
+        if (_currentQRUrl) {
+            window.location.href = _currentQRUrl;
         }
       }
 
