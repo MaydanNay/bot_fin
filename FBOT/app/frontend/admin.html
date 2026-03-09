@@ -186,6 +186,14 @@
       const API_BASE = "";
       let users = [];
       let webToken = localStorage.getItem("web_token");
+      const initData = tg.initData || "";
+
+      function getAuthHeaders() {
+          const headers = { "Content-Type": "application/json" };
+          if (initData) headers["X-Telegram-Init-Data"] = initData;
+          if (webToken) headers["X-Web-Token"] = webToken;
+          return headers;
+      }
 
       function showToast(msg) {
         const t = document.getElementById("toast");
@@ -197,14 +205,19 @@
       async function loadUsers() {
         try {
           const res = await fetch(`${API_BASE}/api/admin/users`, {
-            headers: { "X-Web-Token": webToken }
+            headers: getAuthHeaders()
           });
           const data = await res.json();
           if (res.ok) {
             users = data.users;
-            // Обновляем счётчики
             document.getElementById("stat-total").innerText = users.length;
-            const activeCount = users.filter(u => u.expires_at === "Безлимит" || u.expires_at > new Date().toISOString().slice(0,16)).length;
+            
+            const nowIso = new Date().toISOString().replace('T', ' ').slice(0, 16);
+            const activeCount = users.filter(u => {
+                if (u.is_admin || u.expires_at === "Безлимит") return true;
+                return u.expires_at && u.expires_at >= nowIso;
+            }).length;
+
             document.getElementById("stat-active").innerText = activeCount;
             renderUsers();
           } else {
@@ -221,62 +234,60 @@
         const filtered = users.filter(u => 
           (u.name && u.name.toLowerCase().includes(q)) || 
           (u.phone && u.phone.includes(q)) ||
-          (u.username && u.username.toLowerCase().includes(q))
+          (u.username && u.username.toLowerCase().includes(q)) ||
+          (u.uid && u.uid.includes(q))
         );
 
         list.innerHTML = filtered.map(u => `
           <div class="user-card">
             <div class="user-info">
-              <div class="avatar">${(u.name || "?")[0].toUpperCase()}</div>
+              <div class="avatar">${(u.name || u.username || "?")[0].toUpperCase()}</div>
               <div class="details">
                 <div class="name">
-                  ${u.name || "Без имени"} (${u.phone})
+                  ${u.name || u.username || "Без имени"} (${u.phone || u.uid})
                   ${u.is_admin ? '<span class="badge-admin">Администратор</span>' : ''}
                 </div>
                 <div class="expiry">До: ${u.expires_at || "Бессрочно"}</div>
               </div>
             </div>
             <div class="actions">
-              <div class="btn-opt" onclick="updateAccess('${u.phone}', 1)">+1 мес</div>
-              <div class="btn-opt" onclick="updateAccess('${u.phone}', 3)">+3 мес</div>
-              <div class="btn-opt" onclick="updateAccess('${u.phone}', 12)">+1 год</div>
+              <div class="btn-opt" onclick="updateAccess('${u.uid}', 1)">+1 мес</div>
+              <div class="btn-opt" onclick="updateAccess('${u.uid}', 3)">+3 мес</div>
+              <div class="btn-opt" onclick="updateAccess('${u.uid}', 12)">+1 год</div>
             </div>
           </div>
         `).join("");
       }
 
-      async function updateAccess(phone, months) {
+      async function updateAccess(targetUid, months) {
         tg.HapticFeedback.impactOccurred("medium");
         try {
           const res = await fetch(`${API_BASE}/api/admin/update_access`, {
             method: "POST",
-            headers: { 
-              "Content-Type": "application/json",
-              "X-Web-Token": webToken 
-            },
-            body: JSON.stringify({ phone, months })
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ uid: targetUid, months })
           });
           const data = await res.json();
           if (res.ok) {
-            showToast("Доступ продлен!");
+            showToast("Доступ обновлен!");
             loadUsers();
           } else {
-            showToast(data.error);
+            showToast(data.error || "Ошибка");
           }
         } catch (e) { showToast("Ошибка"); }
       }
 
       function addUser() {
         document.getElementById("add-user-backdrop").style.display = "flex";
+        tg.HapticFeedback.impactOccurred("light");
       }
-
       function closeAddUserModal() {
         document.getElementById("add-user-backdrop").style.display = "none";
       }
 
       async function submitAddUser() {
         const phone = document.getElementById("new-user-phone").value.trim();
-        const months = document.getElementById("new-user-months").value;
+        const months = parseInt(document.getElementById("new-user-months").value);
         if (!phone) {
           showToast("Введите номер!");
           return;
@@ -286,10 +297,7 @@
         try {
           const res = await fetch(`${API_BASE}/api/admin/add_user`, {
             method: "POST",
-            headers: { 
-              "Content-Type": "application/json",
-              "X-Web-Token": webToken 
-            },
+            headers: getAuthHeaders(),
             body: JSON.stringify({ phone, months })
           });
           const data = await res.json();
@@ -303,6 +311,7 @@
         } catch (e) { showToast("Ошибка"); }
       }
 
+      if (tg) tg.expand();
       loadUsers();
     </script>
   </body>

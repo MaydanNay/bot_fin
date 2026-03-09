@@ -289,6 +289,17 @@
         background: #ffffff; border-radius: 28px; padding: 24px; width: 100%; max-width: 400px; max-height: 80vh; display: flex; flex-direction: column;
         border: 1px solid rgba(0,0,0,0.05);
       }
+      #channel-picker-backdrop .mailing-targets-card,
+      #mailing-targets-backdrop .mailing-targets-card {
+        max-width: none;
+        width: 100%;
+        height: 100%;
+        max-height: none;
+        border-radius: 0;
+        padding-bottom: env(safe-area-inset-bottom, 20px);
+      }
+      #channel-picker-backdrop,
+      #mailing-targets-backdrop { padding: 0 !important; }
       .targets-list { overflow-y: auto; flex: 1; margin: 16px 0; padding-right: 4px; }
       .target-item { display: flex; align-items: center; gap: 12px; padding: 10px; border-bottom: 1px solid rgba(0,0,0,0.05); cursor: pointer; }
       .target-item:last-child { border-bottom: none; }
@@ -497,6 +508,11 @@
         <div class="modal-actions">
           <button onclick="selectAllChannels(true)">Выбрать всех</button>
           <button onclick="selectAllChannels(false)">Снять всех</button>
+        </div>
+
+        <div class="modal-actions" style="margin-top: 8px; border-top: 1px solid var(--border-color); padding-top: 12px; justify-content: center; gap: 8px;">
+          <button id="sort-ch-recent-btn" onclick="sortChannels('recent')" style="font-size: 11px; padding: 6px 10px; background: rgba(139, 92, 246, 0.1); color: var(--button-color); border: 1px solid rgba(139, 92, 246, 0.2);">Сначала недавние</button>
+          <button id="sort-ch-old-btn" onclick="sortChannels('old')" style="font-size: 11px; padding: 6px 10px; background: transparent; color: var(--hint-color); border: 1px solid var(--border-color);">Сначала давние</button>
         </div>
 
         <div class="targets-list" id="channel-list-container">
@@ -864,7 +880,7 @@
           const res = await fetch(`${API_BASE}/api/crm?uid=${userId}`, { headers: getAuthHeaders() });
           const data = await res.json();
           allCrmContacts = data.contacts || [];
-          renderTargets();
+          sortTargets('recent'); // По умолчанию сначала недавние
         } catch (e) {
           container.innerHTML = `<div style="color: red; padding: 10px;">Ошибка загрузки</div>`;
         }
@@ -968,7 +984,7 @@
           const res = await fetch(`${API_BASE}/api/channels?uid=${userId}`, { headers: getAuthHeaders() });
           const data = await res.json();
           allUserChannels = data.channels || [];
-          renderChannels();
+          sortChannels('recent'); // По умолчанию сначала недавние
           updateChannelBadge();
         } catch (e) {
           container.innerHTML = `<div style="color: red; padding: 10px;">Ошибка загрузки</div>`;
@@ -1000,6 +1016,31 @@
         const ch = allUserChannels.find(c => c.channel_link === link);
         if (ch) ch.enabled = !ch.enabled;
         renderChannels();
+      }
+
+      function sortChannels(order) {
+        const btnRecent = document.getElementById("sort-ch-recent-btn");
+        const btnOld = document.getElementById("sort-ch-old-btn");
+
+        if (order === 'recent') {
+          allUserChannels.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+          btnRecent.style.background = "rgba(139, 92, 246, 0.1)";
+          btnRecent.style.color = "var(--button-color)";
+          btnRecent.style.borderColor = "rgba(139, 92, 246, 0.2)";
+          btnOld.style.background = "transparent";
+          btnOld.style.color = "var(--hint-color)";
+          btnOld.style.borderColor = "var(--border-color)";
+        } else {
+          allUserChannels.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+          btnOld.style.background = "rgba(139, 92, 246, 0.1)";
+          btnOld.style.color = "var(--button-color)";
+          btnOld.style.borderColor = "rgba(139, 92, 246, 0.2)";
+          btnRecent.style.background = "transparent";
+          btnRecent.style.color = "var(--hint-color)";
+          btnRecent.style.borderColor = "var(--border-color)";
+        }
+        renderChannels();
+        tg.HapticFeedback.impactOccurred("light");
       }
 
       function selectAllChannels(select) {

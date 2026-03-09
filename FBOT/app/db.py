@@ -134,6 +134,7 @@ async def init_db():
             ("channels", "channel_id", "BIGINT"),
             ("channels", "enabled", "BOOLEAN DEFAULT TRUE"),
             ("channels", "type", "VARCHAR(32) DEFAULT 'channel'"),
+            ("channels", "created_at", "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP"),
         ]
         
         for table, column, col_type in migrations:
@@ -254,7 +255,7 @@ async def get_all_uids() -> List[str]:
 async def get_all_users() -> List[Dict[str, Any]]:
     if not pool: return []
     async with pool.acquire() as conn:
-        rows = await conn.fetch("SELECT * FROM users")
+        rows = await conn.fetch("SELECT * FROM users ORDER BY uid NULLS LAST")
         return [await _process_user_row(r) for r in rows]
 
 async def update_user_field(uid: str, field: str, value: Any):
@@ -373,7 +374,7 @@ async def get_channels(uid: str, query: str = "", ctype: Optional[str] = None) -
             where_clause += f" AND LOWER(channel_link) LIKE ${param_idx}"
             args.append(f"%{query.lower()}%")
             
-        sql = f"SELECT channel_link, channel_id, enabled, type FROM channels {where_clause}"
+        sql = f"SELECT channel_link, channel_id, enabled, type, created_at FROM channels {where_clause}"
         rows = await conn.fetch(sql, *args)
         return [dict(r) for r in rows]
 
@@ -458,11 +459,6 @@ async def is_phone_allowed(phone: str) -> bool:
         val = await conn.fetchval("SELECT 1 FROM allowed_phones WHERE phone = $1", phone)
         return val is not None
 
-async def get_all_users() -> List[Dict[str, Any]]:
-    if not pool: return []
-    async with pool.acquire() as conn:
-        rows = await conn.fetch("SELECT * FROM users ORDER BY uid NULLS LAST")
-        return [dict(r) for r in rows]
 
 async def update_user_access(phone: str, months: int):
     if not pool: return
