@@ -376,7 +376,15 @@ async def get_channels(uid: str, query: str = "", ctype: Optional[str] = None) -
             
         sql = f"SELECT channel_link, channel_id, enabled, type, created_at FROM channels {where_clause}"
         rows = await conn.fetch(sql, *args)
-        return [dict(r) for r in rows]
+        return [
+            {
+                "channel_link": r['channel_link'],
+                "channel_id": r['channel_id'],
+                "enabled": r['enabled'],
+                "type": r['type'],
+                "created_at": r['created_at'].isoformat() if r['created_at'] else None
+            } for r in rows
+        ]
 
 async def toggle_channel(uid: str, link: str, enabled: bool):
     if not pool: return
