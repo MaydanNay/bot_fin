@@ -17,7 +17,7 @@ import uuid
 import hmac
 import hashlib
 from urllib.parse import parse_qsl
-from datetime import datetime
+from datetime import datetime, date, timedelta
 import io
 import qrcode
 from typing import Dict, Any, List, Iterable, Optional
@@ -1402,13 +1402,23 @@ async def api_get_state(request):
     is_admin = int(uid_str) in ADMIN_IDS if uid_str.isdigit() else False
     resp["is_admin"] = is_admin
     
-    # Срок доступа: для админов всегда Безлимит
+    # Срок доступа
     if is_admin:
         resp["expires_at"] = "Безлимит"
     else:
-        resp["expires_at"] = expires_at.strftime("%Y-%m-%d %H:%M") if expires_at else "Безлимит"
+        exp = udata.get("expires_at")
+        if isinstance(exp, (datetime, date)):
+            resp["expires_at"] = exp.strftime("%Y-%m-%d %H:%M") if hasattr(exp, 'hour') else exp.strftime("%Y-%m-%d")
+        else:
+            resp["expires_at"] = "Безлимит"
         
     resp["expired"] = expired
+    
+    # Робастное преобразование всех дат для JSON
+    for k, v in resp.items():
+        if isinstance(v, (datetime, date)):
+            resp[k] = v.isoformat()
+            
     return web.json_response(resp)
 
 @routes.post("/api/update")
@@ -1664,11 +1674,24 @@ async def api_admin_users(request):
         users = await db.get_all_users()
         # Clean up some data for security if needed
         for u in users:
-            is_u_admin = str(u['uid']) in ADMIN_IDS if u.get('uid') else False
+            uid = u.get('uid')
+            is_u_admin = False
+            if uid and str(uid).isdigit():
+                is_u_admin = int(uid) in ADMIN_IDS
+                
             if is_u_admin:
                 u['expires_at'] = "Безлимит"
             else:
-                u['expires_at'] = u['expires_at'].strftime("%Y-%m-%d %H:%M") if u.get('expires_at') else "Безлимит"
+                exp = u.get('expires_at')
+                if isinstance(exp, (datetime, date)):
+                    u['expires_at'] = exp.strftime("%Y-%m-%d %H:%M") if hasattr(exp, 'hour') else exp.strftime("%Y-%m-%d")
+                else:
+                    u['expires_at'] = "Безлимит"
+            
+            # Принудительно конвертируем все даты в строки для JSON
+            for k in list(u.keys()):
+                if isinstance(u[k], (datetime, date)):
+                    u[k] = u[k].isoformat()
         return web.json_response({"users": users})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
