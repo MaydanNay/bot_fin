@@ -175,6 +175,26 @@
         cursor: pointer;
       }
 
+      .btn-blue {
+        margin-top: 12px;
+        background: #3b82f6;
+        color: white;
+        border: none;
+        font-size: 14px;
+        font-weight: 700;
+        padding: 14px;
+        width: 100%;
+        border-radius: 16px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+      }
+      .btn-blue:active { transform: scale(0.98); }
+      .btn-blue.success {
+        background: #10b981 !important;
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2) !important;
+      }
+
       /* Merge Modal */
       #merge-backdrop {
         position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -276,6 +296,33 @@
       .target-info { font-size: 14px; color: var(--text-color); }
       .modal-actions { display: flex; gap: 10px; justify-content: space-between; margin-bottom: 16px; }
       .modal-actions button { flex: 1; padding: 8px; font-size: 12px; border-radius: 10px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.02); color: var(--hint-color); cursor: pointer; }
+
+      /* Tabs */
+      .tabs {
+        display: flex;
+        gap: 8px;
+        padding: 0 0 24px;
+        width: 100%;
+      }
+      .tab {
+        flex: 1;
+        padding: 12px;
+        text-align: center;
+        background: rgba(0,0,0,0.02);
+        border-radius: 14px;
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--hint-color);
+        cursor: pointer;
+        transition: all 0.2s;
+        border: 1px solid transparent;
+      }
+      .tab.active {
+        background: white;
+        color: var(--button-color);
+        border-color: var(--border-color);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      }
     </style>
   </head>
 
@@ -336,6 +383,7 @@
           <label>Введите 2FA пароль:</label>
           <input type="password" id="2fa-password" style="margin-bottom: 16px" placeholder="Ваш пароль" />
           <button class="btn-primary" onclick="submit2FA()">Подтвердить</button>
+          <button class="btn-secondary" onclick="cancel2FA()" style="margin-top: 8px; width: 100%;">Отмена</button>
         </div>
         <button class="btn-secondary" onclick="document.getElementById('auth-backdrop').style.display='none'">Закрыть</button>
       </div>
@@ -345,70 +393,79 @@
     <div id="main-content">
       <div id="loading"><div class="spinner"></div></div>
 
-      <div class="header" style="height: 20px; border: none;"></div>
+      <div class="header" style="height: 10px; border: none;"></div>
 
-      <div class="section toggle-row" style="margin-bottom: 12px;">
-        <div>
-          <div style="font-weight: 700; font-size: 17px; margin-bottom: 10px">Поиск заказов</div>
-          <button class="btn btn-secondary" style="margin: 0; width: auto; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12px; padding: 10px 16px;" onclick="openChannelPickerModal()">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 12l2 2 4-4"/></svg>
-            Выбрать каналы <span id="channel-selection-badge" style="display: none; background: var(--button-color); color: white; padding: 1px 6px; border-radius: 8px; font-size: 10px;">0</span>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-val" id="stat-sent-today">0</div>
+          <div class="stat-label">Сегодня</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="stat-crm-size">0</div>
+          <div class="stat-label">База CRM</div>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <div class="tab active" id="tab-search" onclick="switchMainTab('search')">Поиск заказов</div>
+        <div class="tab" id="tab-mailing" onclick="switchMainTab('mailing')">Рассылка</div>
+      </div>
+
+      <div id="search-view">
+        <div class="section toggle-row" style="margin-bottom: 12px;">
+          <div>
+            <div style="font-weight: 700; font-size: 17px; margin-bottom: 10px">Состояние поиска</div>
+            <button class="btn btn-secondary" style="margin: 0; width: auto; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12px; padding: 10px 16px;" onclick="openChannelPickerModal()">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 12l2 2 4-4"/></svg>
+              Выбрать каналы <span id="channel-selection-badge" style="display: none; background: var(--button-color); color: white; padding: 1px 6px; border-radius: 8px; font-size: 10px;">0</span>
+            </button>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="power-toggle" />
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="section">
+          <div class="section-title">
+            Шаблон отклика <span class="badge">AI Ready</span>
+          </div>
+          <textarea id="reply-text" placeholder="Напишите текст вашего отклика здесь..."></textarea>
+          <button class="btn-blue" onclick="saveConfig(this)">Сохранить изменения</button>
+        </div>
+
+        <div class="section">
+          <div class="section-title">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--button-color)"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4a1 1 0 0 0-1.4 0l-2.1 2.1a1 1 0 0 0 0 1.4Z"/><path d="m15.5 7.5-3 3"/><path d="m13.5 13.5-3 3"/><path d="m11.5 19.5-3 3"/><path d="M5 21 3 23"/><path d="M17.3 5.3 15 3"/><path d="m9.7 12.9 4.4 4.4"/><path d="m5.3 17.3 4.4 4.4"/></svg>
+              Ключевые слова
+            </div>
+          </div>
+          <label>Бот ищет эти слова в сообщениях каналов. Указывайте через запятую.</label>
+          <textarea id="keywords-text" placeholder="3d, аниматор, motion, Blender..."></textarea>
+          <button class="btn-blue" onclick="saveConfig(this)">Сохранить слова</button>
+        </div>
+      </div>
+
+      <div id="mailing-view" style="display: none;">
+        <div class="section" style="border: 1px solid rgba(139, 92, 246, 0.2); background: rgba(139, 92, 246, 0.02); box-shadow: 0 10px 30px rgba(139, 92, 246, 0.05);">
+          <div class="section-title">
+            <div style="display: flex; align-items: center; gap: 8px; background: var(--accent-gradient); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: #8b5cf6;"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.71.79-1.81.79-1.81l-1.98-1.98s-1.1.08-1.81.79Z"/><path d="M15 8.5c.07-.07.11-.17.14-.28.19-.58.11-1.17-.4-1.69l-.17-.11c-.52-.51-1.11-.59-1.69-.4-.11.03-.21.07-.28.14l-1.14 1.14c-.1.1-.14.2-.17.3q-.12.42.11.83l.21.32c.1.15.2.25.32.32q.41.23.83.11c.1-.03.2-.07.3-.17Z"/><path d="M10 10l-1.5 1.5"/><path d="M13 13l-1.5 1.5"/><path d="M16 16l-1.5 1.5"/><path d="M21 3s-9 1-13 11l-2 2 5 5 2-2c10-4 11-13 11-13Z"/></svg>
+              Расширенная рассылка
+            </div>
+          </div>
+          <button class="btn btn-secondary" style="margin-top: 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px;" onclick="openTargetsModal()">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Выбрать получателей <span id="selection-info" style="display: none; background: var(--button-color); color: white; padding: 2px 8px; border-radius: 10px; font-size: 10px;">0</span>
           </button>
-        </div>
-        <label class="switch">
-          <input type="checkbox" id="power-toggle" />
-          <span class="slider"></span>
-        </label>
-      </div>
 
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-val" id="stat-sent-today">0</div>
-        <div class="stat-label">Сегодня</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-val" id="stat-crm-size">0</div>
-        <div class="stat-label">База CRM</div>
-      </div>
-    </div>
-
-    <div class="section">
-      <div class="section-title">
-        Шаблон отклика <span class="badge">AI Ready</span>
-      </div>
-      <textarea id="reply-text" placeholder="Напишите текст вашего отклика здесь..."></textarea>
-      <button class="btn btn-secondary" style="margin-top: 12px" onclick="saveConfig()">Сохранить изменения</button>
-    </div>
-
-    <div class="section">
-      <div class="section-title">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--button-color)"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4a1 1 0 0 0-1.4 0l-2.1 2.1a1 1 0 0 0 0 1.4Z"/><path d="m15.5 7.5-3 3"/><path d="m13.5 13.5-3 3"/><path d="m11.5 19.5-3 3"/><path d="M5 21 3 23"/><path d="M17.3 5.3 15 3"/><path d="m9.7 12.9 4.4 4.4"/><path d="m5.3 17.3 4.4 4.4"/></svg>
-          Ключевые слова
+          <label>Текст сообщения:</label>
+          <textarea id="crm-text" placeholder="Текст для всех контактов в CRM базе..." style="min-height: 250px;"></textarea>
+          
+          <button class="btn btn-primary" id="crm-send-btn" onclick="startMassMailing()" style="margin-top: 16px; width: 100%;">Запустить рассылку</button>
         </div>
       </div>
-      <label>Бот ищет эти слова в сообщениях каналов. Указывайте через запятую.</label>
-      <textarea id="keywords-text" placeholder="3d, аниматор, motion, Blender..."></textarea>
-      <button class="btn btn-secondary" style="margin-top: 12px" onclick="saveConfig()">Сохранить слова</button>
-    </div>
-
-    <div class="section" style="border: 1px solid rgba(139, 92, 246, 0.2); background: rgba(139, 92, 246, 0.02); box-shadow: 0 10px 30px rgba(139, 92, 246, 0.05);">
-      <div class="section-title">
-        <div style="display: flex; align-items: center; gap: 8px; background: var(--accent-gradient); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: #8b5cf6;"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.71.79-1.81.79-1.81l-1.98-1.98s-1.1.08-1.81.79Z"/><path d="M15 8.5c.07-.07.11-.17.14-.28.19-.58.11-1.17-.4-1.69l-.17-.11c-.52-.51-1.11-.59-1.69-.4-.11.03-.21.07-.28.14l-1.14 1.14c-.1.1-.14.2-.17.3q-.12.42.11.83l.21.32c.1.15.2.25.32.32q.41.23.83.11c.1-.03.2-.07.3-.17Z"/><path d="M10 10l-1.5 1.5"/><path d="M13 13l-1.5 1.5"/><path d="M16 16l-1.5 1.5"/><path d="M21 3s-9 1-13 11l-2 2 5 5 2-2c10-4 11-13 11-13Z"/></svg>
-          Расширенная рассылка
-        </div>
-      </div>
-      <button class="btn btn-secondary" style="margin-top: 12px; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px;" onclick="openTargetsModal()">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        Выбрать получателей <span id="selection-info" style="display: none; background: var(--button-color); color: white; padding: 2px 8px; border-radius: 10px; font-size: 10px;">0</span>
-      </button>
-
-      <label>Текст сообщения:</label>
-      <textarea id="crm-text" placeholder="Текст для всех контактов в CRM базе..."></textarea>
-      
-      <button class="btn btn-primary" id="crm-send-btn" onclick="startMassMailing()" style="margin-top: 16px; width: 100%;">Запустить рассылку</button>
-    </div>
 
     <!-- Mailing Targets Modal -->
     <div id="mailing-targets-backdrop" onclick="if(event.target === this) closeTargetsModal()">
@@ -562,10 +619,36 @@
           const contactsCount = (data.mailing_list || []).length;
           statCrm.innerText = contactsCount;
           
+          // Восстанавливаем активную вкладку
+          switchMainTab(localStorage.getItem("main_active_tab") || "search");
         } catch (e) {
           console.error(e);
           if (tg.showAlert) tg.showAlert("Ошибка подключения");
         }
+      }
+
+      function switchMainTab(tab) {
+        const tabSearch = document.getElementById("tab-search");
+        const tabMailing = document.getElementById("tab-mailing");
+        const viewSearch = document.getElementById("search-view");
+        const viewMailing = document.getElementById("mailing-view");
+
+        if (!tabSearch || !tabMailing || !viewSearch || !viewMailing) return;
+
+        if (tab === "search") {
+          tabSearch.classList.add("active");
+          tabMailing.classList.remove("active");
+          viewSearch.style.display = "block";
+          viewMailing.style.display = "none";
+        } else {
+          tabSearch.classList.remove("active");
+          tabMailing.classList.add("active");
+          viewSearch.style.display = "none";
+          viewMailing.style.display = "block";
+        }
+        
+        localStorage.setItem("main_active_tab", tab);
+        if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
       }
 
 
@@ -718,14 +801,24 @@
         });
         const data = await res.json();
         if (data.status === "success") {
-            if (data.web_token) localStorage.setItem("web_token", data.web_token);
+            if (data.web_token) {
+                localStorage.setItem("web_token", data.web_token);
+                if (data.uid) localStorage.setItem("user_id", data.uid);
+            }
             location.reload();
         } else alert("Неверный пароль");
       }
 
-      async function saveConfig() {
+      function cancel2FA() {
+          document.getElementById("password-input-container").style.display = "none";
+          document.getElementById("qrcode-container").style.display = "block";
+          document.getElementById("qr-timer-wrapper").style.display = "block";
+          document.getElementById("auth-instructions").innerText = "Отсканируйте QR-код для входа";
+      }
+
+      async function saveConfig(btn) {
+        if (!btn) btn = event?.target;
         if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
-        const btn = event.target;
         const oldText = btn.innerText;
         btn.innerText = "⏳...";
         try {
@@ -740,7 +833,11 @@
           });
           if (res.ok) {
             btn.innerText = "✅ Готово";
-            setTimeout(() => btn.innerText = oldText, 2000);
+            btn.classList.add("success");
+            setTimeout(() => {
+                btn.innerText = oldText;
+                btn.classList.remove("success");
+            }, 2000);
           }
         } catch (e) { btn.innerText = "❌"; }
       }

@@ -91,7 +91,7 @@
       .stat-label { font-size: 11px; color: var(--hint-color); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
 
       .add-section {
-        padding: 0 16px 20px;
+        padding: 0 16px 0px;
       }
 
       .btn-add-trigger {
@@ -431,6 +431,7 @@
     <div class="tabs">
       <div class="tab active" id="tab-contacts" onclick="switchTab('contacts')">Контакты</div>
       <div class="tab" id="tab-channels" onclick="switchTab('channels')">Каналы</div>
+      <div class="tab" id="tab-groups" onclick="switchTab('groups')">Группы</div>
     </div>
 
     <div class="add-section" style="display: flex; gap: 8px; margin-bottom: 8px;">
@@ -550,8 +551,13 @@
       }
 
       function getItemAvatar(item) {
-        const s = String(item);
-        if (s.startsWith("@")) return s[1].toUpperCase();
+        let s = "";
+        if (typeof item === 'object' && item !== null) {
+          s = item.contact || item.channel_link || "";
+        } else {
+          s = String(item || "");
+        }
+        if (s.startsWith("@")) return s[1]?.toUpperCase() || "?";
         if (s.startsWith("http")) return "CH";
         return (s[0] ? s[0].toUpperCase() : "?");
       }
@@ -562,6 +568,7 @@
         
         document.getElementById("tab-contacts").classList.toggle("active", tab === "contacts");
         document.getElementById("tab-channels").classList.toggle("active", tab === "channels");
+        document.getElementById("tab-groups").classList.toggle("active", tab === "groups");
         
         const label = document.getElementById("stat-label");
         const input = document.getElementById("search-input");
@@ -569,6 +576,7 @@
         const modalHint = document.getElementById("modal-hint");
         const textarea = document.getElementById("bulk-input");
         const btnAddText = document.getElementById("btn-add-text");
+        const btnCollectText = document.getElementById("btn-collect-text");
 
         if (tab === "contacts") {
           label.innerText = "Всего контактов";
@@ -577,15 +585,23 @@
           modalHint.innerText = "Введите контакты по одному на строку (номер телефона или @username)";
           textarea.placeholder = "@username1\n79991234321\n@username2";
           if (btnAddText) btnAddText.innerText = "Добавить контакты";
-          document.getElementById("btn-collect-text").innerText = "Собрать контакты из чатов";
-        } else {
+          if (btnCollectText) btnCollectText.innerText = "Собрать контакты из чатов";
+        } else if (tab === "channels") {
           label.innerText = "Всего каналов";
           input.placeholder = "Поиск каналов...";
           modalTitle.innerText = "Добавить каналы";
           modalHint.innerText = "Введите ссылки на каналы или @username по одному на строку";
           textarea.placeholder = "https://t.me/channel1\n@channel2\nhttps://t.me/+join_link";
           if (btnAddText) btnAddText.innerText = "Добавить каналы";
-          document.getElementById("btn-collect-text").innerText = "Собрать каналы из чатов";
+          if (btnCollectText) btnCollectText.innerText = "Собрать каналы из чатов";
+        } else {
+          label.innerText = "Всего групп";
+          input.placeholder = "Поиск групп...";
+          modalTitle.innerText = "Добавить группы";
+          modalHint.innerText = "Введите ссылки на группы или @username по одному на строку";
+          textarea.placeholder = "https://t.me/group1\n@group2\nhttps://t.me/joinchat/...";
+          if (btnAddText) btnAddText.innerText = "Добавить группы";
+          if (btnCollectText) btnCollectText.innerText = "Собрать группы из чатов";
         }
         
         tg.HapticFeedback.impactOccurred("light");
@@ -602,15 +618,24 @@
           return;
         }
         el.innerHTML = list.map(item => {
-          const s = (typeof item === 'object' && item.channel_link) ? item.channel_link : String(item);
-          const typeLabel = activeTab === "contacts" ? "Контакт Telegram" : "Telegram Канал";
+          let s = "";
+          if (typeof item === 'object' && item !== null) {
+            s = item.contact || item.channel_link || "";
+          } else {
+            s = String(item || "");
+          }
+          const sourceInfo = (typeof item === 'object' && item.source) ? `<div class="contact-type" style="font-size:10px; opacity:0.7;">Ист: ${item.source}</div>` : '';
+          let typeLabel = activeTab === "contacts" ? "Контакт Telegram" : "Telegram Канал";
+          if (activeTab === "groups") typeLabel = "Telegram Группа";
+          if (typeof item === 'object' && item.type === 'group') typeLabel = "Telegram Группа";
           const statusLabel = (typeof item === 'object' && item.enabled === false) ? '<span style="color:var(--danger-color); font-size:10px; margin-left:5px;">(Выкл)</span>' : '';
           
           return `<div class="contact-item" id="item-${CSS.escape(s)}">
-            <div class="contact-avatar">${getItemAvatar(s)}</div>
+            <div class="contact-avatar">${getItemAvatar(item)}</div>
             <div style="flex:1; overflow:hidden;">
               <div class="contact-name">${s}${statusLabel}</div>
               <div class="contact-type">${typeLabel}</div>
+              ${sourceInfo}
             </div>
             <button class="delete-btn" onclick='deleteItem(${JSON.stringify(s)})'>
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
@@ -621,11 +646,17 @@
 
       async function loadData(q = "") {
         try {
-          const endpoint = activeTab === "contacts" ? "/api/crm" : "/api/channels";
-          const queryString = q ? `&q=${encodeURIComponent(q)}` : "";
-          const url = `${API_BASE}${endpoint}?uid=${userId}${queryString}`;
+          let endpoint = "/api/crm";
+          if (activeTab === "channels") endpoint = "/api/channels?type=channel";
+          if (activeTab === "groups") endpoint = "/api/channels?type=group";
           
-          const res = await fetch(url, { headers: getAuthHeaders() });
+          // Формирование URL для надежности
+          let finalUrl = `${API_BASE}${endpoint}`;
+          if (finalUrl.includes("?")) finalUrl += `&uid=${userId}`;
+          else finalUrl += `?uid=${userId}`;
+          if (q) finalUrl += `&q=${encodeURIComponent(q)}`;
+
+          const res = await fetch(finalUrl, { headers: getAuthHeaders() });
           const data = await res.json();
           
           if (!res.ok || data.registered === false || data.error) { 
@@ -677,9 +708,9 @@
 
         try {
           const endpoint = activeTab === "contacts" ? "/api/crm/add" : "/api/channels/add";
-          const payload = activeTab === "contacts" 
+          let payload = activeTab === "contacts" 
             ? { uid: String(userId), contacts: lines.map(v => (v.startsWith("@") || /^\d+$/.test(v) ? v : "@" + v)) }
-            : { uid: String(userId), channels: lines };
+            : { uid: String(userId), channels: lines, type: activeTab === 'groups' ? 'group' : 'channel' };
 
           const res = await fetch(`${API_BASE}${endpoint}`, {
             method: "POST",

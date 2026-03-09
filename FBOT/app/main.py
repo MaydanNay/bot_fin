@@ -431,7 +431,7 @@ def make_watcher_handler(uid_str: str):
                         else:
                             await db.update_user_field(uid_str, "daily_sent", current_daily_sent + 1)
                     
-                    await db.add_crm_contacts(uid_str, [target])
+                    await db.add_crm_contacts(uid_str, [target], source="Авто-сбор")
                     
                     # Уведомляем админов и самого пользователя
                     who = target if isinstance(target, str) else f"id:{target}"
@@ -760,6 +760,7 @@ async def cmd_user_help(event):
         "/on — включить рассылку откликов\n"
         "/off — выключить\n"
         "/add_channel <ссылка|@username> — добавить канал для сканирования\n"
+        "/add_group <ссылка|@username> — добавить группу (чат) для сканирования\n"
         "/list_channels — список каналов\n"
         "/set_reply <текст> — твой шаблон отклика\n"
         "/get_reply — текущий шаблон\n"
@@ -858,6 +859,24 @@ async def cmd_user_add_channel(event):
         await event.respond("Готово! Канал добавлен и юзербот на него подписался ✅")
     else:
         await event.respond("Не удалось подписаться на этот канал 🚫")
+@bot_client.on(events.NewMessage(pattern=r"^/add_group\s+(.+)$"))
+async def cmd_user_add_group(event):
+    uid_str = str(event.sender_id)
+    user_data = await db.get_user(uid_str)
+    if not user_data: return
+    
+    link = event.pattern_match.group(1).strip()
+    client = user_clients.get(uid_str)
+    if not client:
+        return await event.respond("ОШИБКА: Твой юзербот сейчас оффлайн. Обратись к админу.")
+    
+    await event.respond(f"Добавляю группу: {link}\nПодписываюсь...")
+    cid = await ensure_join(client, link)
+    if cid:
+        await db.add_channel(uid_str, link, ctype="group")
+        await event.respond("Готово! Группа добавлена ✅")
+    else:
+        await event.respond("Не удалось подписаться на эту группу 🚫")
 
 @bot_client.on(events.NewMessage(pattern=r"^/list_channels$"))
 async def cmd_user_list_channels(event):
@@ -896,7 +915,7 @@ async def cmd_user_collect_dialogs(event):
         my_id = str((await client.get_me()).id)
         contacts = [c for c in contacts if str(c) != my_id]
         
-        added_count = await db.add_crm_contacts(uid_str, contacts)
+        added_count = await db.add_crm_contacts(uid_str, contacts, source="Чат")
         count = await db.get_crm_count(uid_str)
         await msg.edit(f"✅ Сбор завершен!\nНайдено новых личных переписок: {added_count}\nВсего в CRM базе: {count} контактов.")
     except Exception as e:
@@ -909,7 +928,7 @@ async def cmd_user_add_mail(event):
     user_data = await db.get_user(uid_str)
     if not user_data: return
     target = event.pattern_match.group(1).strip()
-    await db.add_crm_contacts(uid_str, [target])
+    await db.add_crm_contacts(uid_str, [target], source="Авто-сбор")
     count = await db.get_crm_count(uid_str)
     await event.respond(f"✅ Добавлен в базу рассылки: {target}. Всего в базе: {count}")
 
@@ -938,7 +957,8 @@ async def cmd_user_run_mail(event):
     if not user_data: return
     
     text = event.pattern_match.group(1)
-    ml = await db.get_crm_contacts(uid_str)
+    ml_data = await db.get_crm_contacts(uid_str)
+    ml = [c['contact'] for c in ml_data]
     limit = int(user_data.get("mail_limit", 50))
     limit = min(limit, len(ml))
     
@@ -1216,6 +1236,76 @@ async def api_qr_login(request):
         log.error(f"QR WebApp Generation Error: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
+async def finalize_webapp_login(w_session):
+    """Общая логика завершения регистрации и запуска юзербота."""
+    uid = w_session["uid"]
+    client = w_session["client"]
+    uid_str = str(uid)
+    
+    # Сохранение сессии
+    session_str = client.session.save()
+    await client.disconnect()
+
+    # Очистка временных файлов
+    try:
+        orig_uid = w_session.get("original_uid", uid)
+        temp_session_path = str(pathlib.Path(SESSIONS_DIR) / f"{orig_uid}_login")
+        for ext in [".session", ".session-journal"]:
+            if os.path.exists(temp_session_path + ext):
+                os.remove(temp_session_path + ext)
+    except: pass
+    
+    # Подготовка данных для БД
+    user_phone = w_session.get("phone") or str(uid)
+    user_db_data = {
+        "phone": user_phone,
+        "session_string": session_str,
+        "name": w_session.get("name"),
+        "username": w_session.get("username"),
+        "enabled": False,
+        "reply_text": DEFAULT_REPLY,
+        "keywords": DEFAULT_KEYWORDS.copy(),
+        "negative_words": DEFAULT_NEGATIVE_WORDS.copy(),
+        "daily_sent": 0,
+        "daily_date": datetime.now().date(),
+        "mail_limit": 50
+    }
+    await db.upsert_user(uid_str, user_db_data)
+    
+    # Генерация веб-токена
+    token = str(uuid.uuid4())
+    await db.set_web_token(token, user_db_data["phone"])
+    
+    # Логика админа
+    if user_phone in HARDCODED_ADMIN_PHONES:
+        if uid not in ADMIN_IDS:
+            await db.add_admin(uid)
+            ADMIN_IDS.add(uid)
+    
+    log.info(f"User {uid_str} fully registered via WebApp (Finalize)")
+    
+    try:
+        await bot_client.send_message(uid, "Успешная авторизация через WebApp! 🎉\nВведи /help для настройки.")
+    except: pass
+    
+    # Запуск юзербота
+    new_client = TelegramClient(
+        StringSession(session_str), API_ID, API_HASH,
+        device_model="Desktop", system_version="Windows 11", app_version="4.6.1",
+        lang_code="en", system_lang_code="en"
+    )
+    await new_client.connect()
+    user_clients[uid_str] = new_client
+    new_client.add_event_handler(make_watcher_handler(uid_str), events.NewMessage())
+    
+    return {
+        "status": "success",
+        "uid": uid_str,
+        "name": w_session.get("name"),
+        "username": w_session.get("username"),
+        "web_token": token
+    }
+
 @routes.post("/api/qr_status")
 async def api_qr_status(request):
     try:
@@ -1229,81 +1319,10 @@ async def api_qr_status(request):
             
         status = w_session["status"]
         if status == "success":
-            # Extract and remove immediately to prevent race conditions on double polling
+            # Извлекаем и удаляем сессию
             w_session = webapp_qr_sessions.pop(session_id)
-            uid = w_session["uid"]
-            client = w_session["client"]
-            
-            # Подготовка как в finalize_login (эмуляция finalize_login)
-            session_str = client.session.save()
-            uid_str = str(uid)
-            await client.disconnect()
-
-            try:
-                orig_uid = w_session.get("original_uid", uid)
-                temp_session_path = str(pathlib.Path(SESSIONS_DIR) / f"{orig_uid}_login")
-                for ext in [".session", ".session-journal"]:
-                    if os.path.exists(temp_session_path + ext):
-                        os.remove(temp_session_path + ext)
-            except: pass
-            
-            # Гарантируем наличие phone (обязательный PK в db.upsert_user)
-            user_phone = w_session.get("phone")
-            if not user_phone:
-                user_phone = str(uid)
-                
-            user_db_data = {
-                "phone": user_phone,
-                "session_string": session_str,
-                "name": w_session.get("name"),
-                "username": w_session.get("username"),
-                "enabled": False,
-                "reply_text": DEFAULT_REPLY,
-                "keywords": DEFAULT_KEYWORDS.copy(),
-                "negative_words": DEFAULT_NEGATIVE_WORDS.copy(),
-                "daily_sent": 0,
-                "daily_date": datetime.now().date(),
-                "mail_limit": 50
-            }
-            await db.upsert_user(uid_str, user_db_data)
-            
-            # Создаем или обновляем веб-токен для всех входов через QR (браузер)
-            token = str(uuid.uuid4())
-            await db.set_web_token(token, user_db_data["phone"])
-            w_session["web_token"] = token
-            
-            # Если админ
-            if w_session.get("phone") in HARDCODED_ADMIN_PHONES:
-                if uid not in ADMIN_IDS:
-                    await db.add_admin(uid)
-                    ADMIN_IDS.add(uid)
-            
-            log.info(f"User {uid_str} fully registered via QR")
-            
-            try:
-                await bot_client.send_message(uid, "Успешная авторизация через WebApp! 🎉\nВведи /help для настройки.")
-            except: pass
-            
-            # Запускаем юзербота
-            new_client = TelegramClient(
-                StringSession(session_str), API_ID, API_HASH,
-                device_model="Desktop", system_version="Windows 11", app_version="4.6.1",
-                lang_code="en", system_lang_code="en"
-            )
-            await new_client.connect()
-            user_clients[uid_str] = new_client
-            new_client.add_event_handler(make_watcher_handler(uid_str), events.NewMessage())
-            
-            resp = {
-                "status": "success",
-                "uid": uid_str,
-                "name": w_session.get("name"),
-                "username": w_session.get("username")
-            }
-            if w_session.get("web_token"):
-                resp["web_token"] = w_session["web_token"]
-                
-            return web.json_response(resp)
+            resp_data = await finalize_webapp_login(w_session)
+            return web.json_response(resp_data)
             
         elif status == "failed":
             client = w_session["client"]
@@ -1335,11 +1354,19 @@ async def api_2fa_login(request):
         client = w_session["client"]
         try:
             await client.sign_in(password=password)
-            me = await client.get_me()
-            phone = f"+{me.phone}" if getattr(me, "phone", None) else str(me.id)
-            w_session["phone"] = phone
-            w_session["status"] = "success"
-            return web.json_response({"status": "success"})
+            if await client.is_user_authorized():
+                me = await client.get_me()
+                w_session["uid"] = me.id
+                w_session["phone"] = f"+{me.phone}" if getattr(me, "phone", None) else str(me.id)
+                w_session["name"] = (me.first_name or "") + (" " + me.last_name if me.last_name else "")
+                w_session["username"] = me.username
+                
+                # Завершаем регистрацию не дожидаясь опроса статуса
+                webapp_qr_sessions.pop(session_id)
+                resp_data = await finalize_webapp_login(w_session)
+                return web.json_response(resp_data)
+            else:
+                return web.json_response({"error": "Unknown login failure"}, status=400)
         except Exception as e:
             return web.json_response({"error": str(e)}, status=400)
     except Exception as e:
@@ -1517,7 +1544,7 @@ async def api_crm_add(request):
         user_data = await db.get_user(uid_str)
         if not user_data: return web.json_response({"error": "Not registered"}, status=404)
         
-        added = await db.add_crm_contacts(uid_str, contacts_to_add)
+        added = await db.add_crm_contacts(uid_str, contacts_to_add, source="Ручной ввод")
         total = await db.get_crm_count(uid_str)
         
         return web.json_response({"status": "ok", "added": added, "total": total})
@@ -1538,9 +1565,12 @@ async def api_crm_export(request):
             return web.json_response({"error": "No contacts to export"}, status=404)
             
         output = io.StringIO()
-        output.write("contact\n")
+        output.write("Contact,Added At,Source\n")
         for c in contacts:
-            output.write(f"{c}\n")
+            added_at = c['created_at'].strftime("%Y-%m-%d %H:%M:%S") if c['created_at'] else ""
+            source = (c['source'] or "").replace('"', '""')
+            contact = c['contact'].replace('"', '""')
+            output.write(f'"{contact}","{added_at}","{source}"\n')
             
         content = output.getvalue()
         filename = f"crm_export_{uid_str}.csv"
@@ -1690,30 +1720,32 @@ async def api_collect_dialogs(request):
             
             my_id = str((await client.get_me()).id)
             results = [c for c in results if str(c) != my_id]
-            added = await db.add_crm_contacts(uid_str, results)
+            added = await db.add_crm_contacts(uid_str, results, source="Диалоги")
             return web.json_response({"status": "ok", "added": added})
             
         elif ctype == "channels":
+            channels_found = []
+            groups_found = []
             async for dialog in client.iter_dialogs(limit=None):
-                if dialog.is_channel or dialog.is_group:
-                    # Пытаемся получить красивую ссылку
-                    link = None
-                    if getattr(dialog.entity, 'username', None):
-                        link = f"https://t.me/{dialog.entity.username}"
-                    elif hasattr(dialog.entity, 'participants_count'): # Обычно для мегагрупп/каналов без юзернейма
-                        # Если нет юзернейма, мы не всегда можем получить инвайт-ссылку без прав
-                        # Но можем сохранить ID или попробовать поискать в БД уже имеющиеся
-                        pass
-                    
-                    if link:
-                        results.append(link)
+                # Пытаемся получить красивую ссылку
+                link = None
+                if getattr(dialog.entity, 'username', None):
+                    link = f"https://t.me/{dialog.entity.username}"
+                
+                if link:
+                    if dialog.is_channel and not dialog.is_group:
+                        channels_found.append(link)
+                    elif dialog.is_group or (dialog.is_channel and dialog.is_group):
+                        groups_found.append(link)
             
-            # Добавляем найденные ссылки в список каналов пользователя
+            # Добавляем найденные ссылки в списки пользователя
             added = 0
-            for l in results:
-                # add_channel в db.py проверяет дубликаты
-                res = await db.add_channel(uid_str, l)
-                if res: added += 1
+            for l in channels_found:
+                if await db.add_channel(uid_str, l, ctype="channel"):
+                    added += 1
+            for l in groups_found:
+                if await db.add_channel(uid_str, l, ctype="group"):
+                    added += 1
                 
             return web.json_response({"status": "ok", "added": added})
             
@@ -1729,8 +1761,8 @@ async def api_channels_list(request):
         return web.json_response({"error": "Unauthorized"}, status=401)
     try:
         q = request.query.get("q", "").strip()
-        channels = await db.get_channels(uid_str, query=q)
-        # channels теперь список словарей [{"channel_link": "...", "channel_id": ..., "enabled": ...}, ...]
+        ctype = request.query.get("type", "channel").strip()
+        channels = await db.get_channels(uid_str, query=q, ctype=ctype)
         return web.json_response({"channels": channels})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -1753,12 +1785,13 @@ async def api_channels_add(request):
         if not client:
             return web.json_response({"error": "User client offline"}, status=400)
             
+        ctype = data.get("type", "channel")
         added_count = 0
         for link in links:
             link = link.strip()
             if not link: continue
             cid = await ensure_join(client, link)
-            await db.add_channel(uid_str, link, channel_id=cid)
+            await db.add_channel(uid_str, link, channel_id=cid, ctype=ctype)
             added_count += 1
                 
         return web.json_response({"status": "ok", "added": added_count})
@@ -1820,7 +1853,8 @@ async def api_run_mail(request):
         if isinstance(provided_targets, list) and len(provided_targets) > 0:
             targets = provided_targets
         else:
-            ml = await db.get_crm_contacts(uid_str)
+            ml_data = await db.get_crm_contacts(uid_str)
+            ml = [item['contact'] for item in ml_data]
             limit = min(int(udata.get("mail_limit", 50)), len(ml))
             if limit == 0: return web.json_response({"error": "Base is empty or limit 0"}, status=400)
             targets = ml[:limit]

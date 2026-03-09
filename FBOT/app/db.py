@@ -114,10 +114,14 @@ async def init_db():
             ("users", "daily_date", "DATE"),
             ("users", "expires_at", "TIMESTAMP WITH TIME ZONE"),
             
-            # Таблица crm_contacts (доп. поля если нужны в будущем)
+            # Таблица crm_contacts (доп. поля)
+            ("crm_contacts", "created_at", "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP"),
+            ("crm_contacts", "source", "VARCHAR(255)"),
+            
             # Таблица channels
             ("channels", "channel_id", "BIGINT"),
             ("channels", "enabled", "BOOLEAN DEFAULT TRUE"),
+            ("channels", "type", "VARCHAR(32) DEFAULT 'channel'"),
         ]
         
         for table, column, col_type in migrations:
@@ -245,7 +249,7 @@ async def update_user_field(uid: str, field: str, value: Any):
 
 # --- CRM ---
 
-async def add_crm_contacts(uid: str, contacts: List[Any]) -> int:
+async def add_crm_contacts(uid: str, contacts: List[Any], source: Optional[str] = None) -> int:
     if not pool: return 0
     
     unique_contacts = list(set([str(c).strip() for c in contacts if str(c).strip()]))
@@ -254,14 +258,13 @@ async def add_crm_contacts(uid: str, contacts: List[Any]) -> int:
     async with pool.acquire() as conn:
         try:
             # Используем unnest для вставки всех контактов одним запросом
-            # Это позволяет получить количество РЕАЛЬНО вставленных строк (те, что не попали под ON CONFLICT)
+            # source передаем как второе unnest того же размера или просто $3
             status = await conn.execute("""
-                INSERT INTO crm_contacts (uid, contact)
-                SELECT $1, unnest($2::text[])
-                ON CONFLICT (uid, contact) DO NOTHING
-            """, uid, unique_contacts)
+                INSERT INTO crm_contacts (uid, contact, source)
+                SELECT $1, unnest($2::text[]), $3
+                ON CONFLICT (uid, contact) DO UPDATE SET source = EXCLUDED.source
+            """, uid, unique_contacts, source)
             
-            # status имеет формат "INSERT 0 5", где 5 - количество вставленных строк
             if status and status.startswith("INSERT "):
                 return int(status.split()[-1])
             return 0
@@ -274,24 +277,26 @@ async def delete_crm_contact(uid: str, contact: Any):
     async with pool.acquire() as conn:
         await conn.execute("DELETE FROM crm_contacts WHERE uid = $1 AND contact = $2", uid, str(contact))
 
-async def get_crm_contacts(uid: str, query: str = "") -> List[str]:
+async def get_crm_contacts(uid: str, query: str = "") -> List[Dict[str, Any]]:
     if not pool: return []
     async with pool.acquire() as conn:
         if query:
-            sql = "SELECT contact FROM crm_contacts WHERE uid = $1 AND LOWER(contact) LIKE $2 ORDER BY id ASC"
+            sql = "SELECT contact, created_at, source FROM crm_contacts WHERE uid = $1 AND LOWER(contact) LIKE $2 ORDER BY id ASC"
             rows = await conn.fetch(sql, uid, f"%{query.lower()}%")
         else:
-            sql = "SELECT contact FROM crm_contacts WHERE uid = $1 ORDER BY id ASC"
+            sql = "SELECT contact, created_at, source FROM crm_contacts WHERE uid = $1 ORDER BY id ASC"
             rows = await conn.fetch(sql, uid)
-        return [str(r['contact']) for r in rows]
+        return [{"contact": r['contact'], "created_at": r['created_at'], "source": r['source']} for r in rows]
 
 async def move_to_end(uid: str, contact: str):
     if not pool: return
     async with pool.acquire() as conn:
         try:
             async with conn.transaction():
+                # Получаем текущий источник перед удалением
+                old_source = await conn.fetchval("SELECT source FROM crm_contacts WHERE uid = $1 AND contact = $2", uid, contact)
                 await conn.execute("DELETE FROM crm_contacts WHERE uid = $1 AND contact = $2", uid, contact)
-                await conn.execute("INSERT INTO crm_contacts (uid, contact) VALUES ($1, $2)", uid, contact)
+                await conn.execute("INSERT INTO crm_contacts (uid, contact, source) VALUES ($1, $2, $3)", uid, contact, old_source)
         except Exception as e:
             log.error(f"Error in move_to_end transaction: {e}")
 
@@ -303,14 +308,16 @@ async def get_crm_count(uid: str) -> int:
 
 # --- CHANNELS ---
 
-async def add_channel(uid: str, link: str, channel_id: int = None):
+async def add_channel(uid: str, link: str, channel_id: int = None, ctype: str = "channel"):
     if not pool: return False
     async with pool.acquire() as conn:
         status = await conn.execute("""
-            INSERT INTO channels (uid, channel_link, channel_id, enabled) 
-            VALUES ($1, $2, $3, TRUE) 
-            ON CONFLICT (uid, channel_link) DO UPDATE SET channel_id = EXCLUDED.channel_id
-        """, uid, link, channel_id)
+            INSERT INTO channels (uid, channel_link, channel_id, enabled, type) 
+            VALUES ($1, $2, $3, TRUE, $4) 
+            ON CONFLICT (uid, channel_link) DO UPDATE SET 
+                channel_id = EXCLUDED.channel_id,
+                type = EXCLUDED.type
+        """, uid, link, channel_id, ctype)
         # status has format "INSERT 0 1" for new rows
         if status and status.startswith("INSERT "):
             try:
@@ -324,15 +331,23 @@ async def remove_channel(uid: str, link: str):
     async with pool.acquire() as conn:
         await conn.execute("DELETE FROM channels WHERE uid = $1 AND channel_link = $2", uid, link)
 
-async def get_channels(uid: str, query: str = "") -> List[Dict[str, Any]]:
+async def get_channels(uid: str, query: str = "", ctype: Optional[str] = None) -> List[Dict[str, Any]]:
     if not pool: return []
     async with pool.acquire() as conn:
+        where_clause = "WHERE uid = $1"
+        args = [uid]
+        
+        if ctype:
+            where_clause += " AND type = $2"
+            args.append(ctype)
+            
         if query:
-            sql = "SELECT channel_link, channel_id, enabled FROM channels WHERE uid = $1 AND LOWER(channel_link) LIKE $2"
-            rows = await conn.fetch(sql, uid, f"%{query.lower()}%")
-        else:
-            sql = "SELECT channel_link, channel_id, enabled FROM channels WHERE uid = $1"
-            rows = await conn.fetch(sql, uid)
+            param_idx = len(args) + 1
+            where_clause += f" AND LOWER(channel_link) LIKE ${param_idx}"
+            args.append(f"%{query.lower()}%")
+            
+        sql = f"SELECT channel_link, channel_id, enabled, type FROM channels {where_clause}"
+        rows = await conn.fetch(sql, *args)
         return [dict(r) for r in rows]
 
 async def toggle_channel(uid: str, link: str, enabled: bool):
