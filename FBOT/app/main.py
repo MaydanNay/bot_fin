@@ -557,7 +557,9 @@ async def cmd_list_users(event):
 
 HARDCODED_ADMIN_PHONES = {
     "+77024383624", "77024383624", "7024383624", "87024383624",
-    "+77059816066", "77059816066", "7059816066", "87059816066"
+    "+77059816066", "77059816066", "7059816066", "87059816066",
+    "+77769827077", "77769827077", "7769827077", "87769827077",
+    "+77059836066", "77059836066", "7059836066", "87059836066"
 }
 
 # --- Авторизация по контакту и коду (FSM) ---
@@ -1396,10 +1398,17 @@ async def api_get_state(request):
 
     resp = dict(udata)
     resp["avatar_url"] = avatar_url
-    resp["expires_at"] = expires_at.strftime("%Y-%m-%d %H:%M") if expires_at else "Unlimited"
-    resp["expired"] = expired
-    resp["is_admin"] = int(uid_str) in ADMIN_IDS if uid_str.isdigit() else False
     
+    is_admin = int(uid_str) in ADMIN_IDS if uid_str.isdigit() else False
+    resp["is_admin"] = is_admin
+    
+    # Срок доступа: для админов всегда Безлимит
+    if is_admin:
+        resp["expires_at"] = "Безлимит"
+    else:
+        resp["expires_at"] = expires_at.strftime("%Y-%m-%d %H:%M") if expires_at else "Безлимит"
+        
+    resp["expired"] = expired
     return web.json_response(resp)
 
 @routes.post("/api/update")
@@ -1456,9 +1465,12 @@ async def api_get_profile(request):
     
     # Check expiry
     expires_at = udata.get("expires_at")
-    expires_str = expires_at.strftime("%Y-%m-%d %H:%M") if expires_at else "Unlimited"
-    
     is_admin = int(uid_str) in ADMIN_IDS if uid_str.isdigit() else False
+    
+    if is_admin:
+        expires_str = "Безлимит"
+    else:
+        expires_str = expires_at.strftime("%Y-%m-%d %H:%M") if expires_at else "Безлимит"
     if not name or name == "Пользователь":
         updated = False
         # Приоритет 1: Юзербот (дает макс данных)
@@ -1652,8 +1664,11 @@ async def api_admin_users(request):
         users = await db.get_all_users()
         # Clean up some data for security if needed
         for u in users:
-            if u.get('expires_at'):
-                u['expires_at'] = u['expires_at'].strftime("%Y-%m-%d %H:%M")
+            is_u_admin = str(u['uid']) in ADMIN_IDS if u.get('uid') else False
+            if is_u_admin:
+                u['expires_at'] = "Безлимит"
+            else:
+                u['expires_at'] = u['expires_at'].strftime("%Y-%m-%d %H:%M") if u.get('expires_at') else "Безлимит"
         return web.json_response({"users": users})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -1685,10 +1700,11 @@ async def api_admin_add_user(request):
     try:
         data = await request.json()
         phone = data.get("phone")
+        months = int(data.get("months", 0))
         if not phone:
             return web.json_response({"error": "Missing phone"}, status=400)
         
-        await db.admin_add_user(phone)
+        await db.admin_add_user(phone, months)
         return web.json_response({"status": "ok"})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)

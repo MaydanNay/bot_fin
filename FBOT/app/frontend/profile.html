@@ -695,7 +695,7 @@
           document.getElementById("profile-username").innerText = data.username ? "@" + data.username : "";
           document.getElementById("profile-phone").innerText = data.phone;
           document.getElementById("profile-id").innerText = "ID: " + data.uid;
-          document.getElementById("profile-expiry").innerText = data.expires_at || "Бессрочно";
+          document.getElementById("profile-expiry").innerText = data.expires_at || "Безлимит";
           
           if (data.expired) {
             document.getElementById("expiry-status").style.color = "#ef4444";

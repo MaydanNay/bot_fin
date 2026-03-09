@@ -177,15 +177,22 @@ async def register_web_user(phone: str, password_hash: str):
             ON CONFLICT (phone) DO NOTHING
         """, uid, phone, password_hash, "[]", "[]", datetime.now().date())
 
-async def admin_add_user(phone: str):
+async def admin_add_user(phone: str, months: int = 0):
     if not pool: return None
     uid = f"admin_{phone}"
+    
+    expires_at = None
+    if months > 0:
+        expires_at = datetime.now() + timedelta(days=30 * months)
+        
     async with pool.acquire() as conn:
         await conn.execute("""
-            INSERT INTO users (uid, phone, keywords, negative_words, daily_date)
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (phone) DO NOTHING
-        """, uid, phone, "[]", "[]", datetime.now().date())
+            INSERT INTO users (uid, phone, keywords, negative_words, daily_date, expires_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (phone) DO UPDATE SET 
+                expires_at = EXCLUDED.expires_at,
+                uid = CASE WHEN users.uid IS NULL THEN EXCLUDED.uid ELSE users.uid END
+        """, uid, phone, "[]", "[]", datetime.now().date(), expires_at)
     return True
 
 async def link_telegram_to_phone(phone: str, uid: str, session_str: str, name: str = None, username: str = None):
@@ -286,7 +293,13 @@ async def get_crm_contacts(uid: str, query: str = "") -> List[Dict[str, Any]]:
         else:
             sql = "SELECT contact, created_at, source FROM crm_contacts WHERE uid = $1 ORDER BY id ASC"
             rows = await conn.fetch(sql, uid)
-        return [{"contact": r['contact'], "created_at": r['created_at'], "source": r['source']} for r in rows]
+        return [
+            {
+                "contact": r['contact'], 
+                "created_at": r['created_at'].isoformat() if r['created_at'] else None, 
+                "source": r['source']
+            } for r in rows
+        ]
 
 async def move_to_end(uid: str, contact: str):
     if not pool: return
