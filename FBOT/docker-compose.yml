@@ -3,6 +3,8 @@ services:
     image: postgres:15-alpine
     container_name: motionhunter-db
     restart: always
+    env_file:
+      - ./app/.env
     environment:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASS:-password}
