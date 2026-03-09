@@ -178,6 +178,7 @@
     </div>
 
 
+    <input type="text" id="search" placeholder="Поиск по имени, телефону или UID..." oninput="renderUsers()" />
     <div id="users-list"></div>
     <div id="toast"></div>
 
@@ -229,7 +230,8 @@
       }
 
       function renderUsers() {
-        const q = document.getElementById("search").value.toLowerCase();
+        const searchEl = document.getElementById("search");
+        const q = searchEl ? searchEl.value.toLowerCase() : "";
         const list = document.getElementById("users-list");
         const filtered = users.filter(u => 
           (u.name && u.name.toLowerCase().includes(q)) || 

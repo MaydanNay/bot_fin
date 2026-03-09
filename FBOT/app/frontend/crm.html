@@ -176,6 +176,7 @@
         font-size: 16px;
         font-weight: 700;
         cursor: pointer;
+        margin-bottom: 20px;
         transition: all 0.2s;
       }
       .btn-primary:active { transform: scale(0.98); }
@@ -710,7 +711,7 @@
             s = String(item || "");
           }
           const sourceInfo = (typeof item === 'object' && item.source) ? `<div class="contact-type" style="font-size:10px; opacity:0.7;">Ист: ${item.source}</div>` : '';
-        const typeLabel = activeTab === "contacts" ? "Контакт Telegram" : "Telegram Канал";
+        let typeLabel = activeTab === "contacts" ? "Контакт Telegram" : "Telegram Канал";
           if (activeTab === "groups") typeLabel = "Telegram Группа";
           if (typeof item === 'object' && item.type === 'group') typeLabel = "Telegram Группа";
           const statusLabel = (typeof item === 'object' && item.enabled === false) ? '<span style="color:var(--danger-color); font-size:10px; margin-left:5px;">(\u0412\u044b\u043a\u043b)</span>' : '';
