@@ -1762,11 +1762,10 @@ async def api_collect_dialogs(request):
             added = await db.add_crm_contacts(uid_str, results, source="Диалоги")
             return web.json_response({"status": "ok", "added": added})
             
-        elif ctype == "channels":
+        elif ctype in ("channels", "groups"):
             channels_found = []
             groups_found = []
             async for dialog in client.iter_dialogs(limit=None):
-                # Пытаемся получить красивую ссылку
                 link = None
                 if getattr(dialog.entity, 'username', None):
                     link = f"https://t.me/{dialog.entity.username}"
@@ -1777,14 +1776,17 @@ async def api_collect_dialogs(request):
                     elif dialog.is_group or (dialog.is_channel and dialog.is_group):
                         groups_found.append(link)
             
-            # Добавляем найденные ссылки в списки пользователя
             added = 0
-            for l in channels_found:
-                if await db.add_channel(uid_str, l, ctype="channel"):
-                    added += 1
-            for l in groups_found:
-                if await db.add_channel(uid_str, l, ctype="group"):
-                    added += 1
+            if ctype == "channels":
+                # Добавляем только каналы
+                for l in channels_found:
+                    if await db.add_channel(uid_str, l, ctype="channel"):
+                        added += 1
+            else:
+                # ctype == "groups" — добавляем только группы
+                for l in groups_found:
+                    if await db.add_channel(uid_str, l, ctype="group"):
+                        added += 1
                 
             return web.json_response({"status": "ok", "added": added})
             

@@ -4,7 +4,7 @@ import json
 import logging
 import asyncio
 import asyncpg
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any
 from dotenv import load_dotenv
 

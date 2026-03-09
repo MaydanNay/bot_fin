@@ -419,8 +419,6 @@
 
     <div id="loading"><div class="spinner"></div></div>
 
-    <div class="header" style="height: 10px; border: none;"></div>
-
     <div class="stats-bar">
       <div class="stat-card" style="grid-column: span 2;">
         <div class="stat-val" id="stat-total">0</div>
@@ -611,10 +609,10 @@
       function renderList(list) {
         const el = document.getElementById("contacts-list");
         if (list.length === 0) {
-          const type = activeTab === "contacts" ? "контактов" : "каналов";
+        const typeLabel = activeTab === "contacts" ? "контактов" : (activeTab === "groups" ? "групп" : "каналов");
           el.innerHTML = `<div class="empty-state"><div class="empty-icon">
             <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.5"><path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4"/><path d="M14 2v5h5"/><path d="M2 15h10"/><path d="m9 18 3-3-3-3"/></svg>
-          </div><div class="empty-title">Пусто</div><div class="empty-text">Список ${type} пока пуст</div></div>`;
+          </div><div class="empty-title">Пусто</div><div class="empty-text">Список ${typeLabel} пока пуст</div></div>`;
           return;
         }
         el.innerHTML = list.map(item => {
@@ -719,7 +717,7 @@
           });
           const data = await res.json();
           if (res.ok) {
-            showToast(activeTab === "contacts" ? `Добавлено: ${data.added || 0}` : `Каналы добавлены: ${data.added || 0}`);
+            showToast(activeTab === "contacts" ? `Добавлено: ${data.added || 0}` : `Добавлено: ${data.added || 0}`);
             textarea.value = "";
             closeAddModal();
             loadData();
@@ -735,8 +733,8 @@
       }
 
       async function deleteItem(item) {
-        const type = activeTab === "contacts" ? "контакт" : "канал";
-        tg.showConfirm(`Удалить ${type} ${item}?`, async (ok) => {
+        const typeLabel = activeTab === "contacts" ? "контакт" : (activeTab === "groups" ? "группу" : "канал");
+        tg.showConfirm(`Удалить ${typeLabel} ${item}?`, async (ok) => {
           if (!ok) return;
           tg.HapticFeedback.impactOccurred("light");
           try {
@@ -797,7 +795,8 @@
 
       async function collectFromChats() {
         tg.HapticFeedback.impactOccurred("medium");
-        tg.showConfirm(`Вы действительно хотите собрать ${activeTab === "contacts" ? 'контакты' : 'каналы'} из всех ваших диалогов? Это может занять некоторое время.`, async (ok) => {
+          const typeWord = activeTab === "contacts" ? 'контакты' : (activeTab === "groups" ? 'группы' : 'каналы');
+          tg.showConfirm(`Вы действительно хотите собрать ${typeWord} из всех ваших диалогов? Это может занять некоторое время.`, async (ok) => {
           if (!ok) return;
           
           tg.MainButton.text = "Сбор данных...";
