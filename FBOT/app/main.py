@@ -70,6 +70,13 @@ VERBOSE = os.getenv("VERBOSE", "0").lower() in {"1", "true", "yes"}
 
 ADMIN_IDS = set()
 
+HARDCODED_ADMIN_PHONES = {
+    "+77024383624", "77024383624", "7024383624", "87024383624",
+    "+77059816066", "77059816066", "7059816066", "87059816066",
+    "+77769827077", "77769827077", "7769827077", "87769827077",
+    "+77059836066", "77059836066", "7059836066", "87059836066"
+}
+
 DEFAULT_REPLY = (
     "Привет!\n\n"
     "Я Белек, AI creator | Motion graphic designer (Астана)\n"
@@ -494,12 +501,26 @@ def make_watcher_handler(uid_str: str):
 
 # ================== Команды Бота Управления ==================
 def is_admin(user_id: Any) -> bool:
-    """Проверяет, является ли пользователь администратором (по ID или префиксу)."""
+    """Проверяет, является ли пользователь администратором (по ID, префиксу или хардкод-номеру)."""
     uid_str = str(user_id)
+    # 1. По префиксу admin_
     if uid_str.startswith("admin_"):
         return True
+    
+    # 2. По префиксу web_ (проверка номера телефона)
+    if uid_str.startswith("web_"):
+        phone = uid_str.replace("web_", "")
+        if phone in HARDCODED_ADMIN_PHONES:
+            return True
+            
+    # 3. По Telegram ID
     if uid_str.isdigit() and int(uid_str) in ADMIN_IDS:
         return True
+        
+    # 4. Прямая проверка номера
+    if uid_str in HARDCODED_ADMIN_PHONES:
+        return True
+        
     return False
 
 AWAITING_PASSWORD = set()
@@ -565,13 +586,6 @@ async def cmd_list_users(event):
         if udata:
             txt += f"UID: {uid} | Phone: {udata.get('phone')} | ON: {udata.get('enabled')}\n"
     await event.respond(txt)
-
-HARDCODED_ADMIN_PHONES = {
-    "+77024383624", "77024383624", "7024383624", "87024383624",
-    "+77059816066", "77059816066", "7059816066", "87059816066",
-    "+77769827077", "77769827077", "7769827077", "87769827077",
-    "+77059836066", "77059836066", "7059836066", "87059836066"
-}
 
 # --- Авторизация по контакту и коду (FSM) ---
 @bot_client.on(events.NewMessage())
@@ -1603,7 +1617,13 @@ async def api_crm_export(request):
         output = io.StringIO()
         output.write("Contact,Added At,Source\n")
         for c in contacts:
-            added_at = c['created_at'].strftime("%Y-%m-%d %H:%M:%S") if c['created_at'] else ""
+            raw_date = c.get('created_at')
+            if isinstance(raw_date, str):
+                added_at = raw_date.replace('T', ' ').split('.')[0] # Убираем миллисекунды и T
+            elif raw_date:
+                added_at = raw_date.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                added_at = ""
             source = (c['source'] or "").replace('"', '""')
             contact = c['contact'].replace('"', '""')
             output.write(f'"{contact}","{added_at}","{source}"\n')
@@ -1628,6 +1648,53 @@ async def api_crm_export(request):
             return web.json_response({"error": "Бот не смог отправить файл. Попробуйте позже."}, status=500)
     except Exception as e:
         log.error(f"CRM Export error: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+
+@routes.get("/api/channels/export")
+async def api_channels_export(request):
+    uid_str = await get_auth_user_id(request)
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+        
+    ctype = request.query.get("type", "channel").strip()
+    
+    try:
+        channels = await db.get_channels(uid_str, ctype=ctype)
+        if not channels:
+            return web.json_response({"error": f"No {ctype}s to export"}, status=404)
+            
+        output = io.StringIO()
+        output.write("Link,ID,Status,Type\n")
+        for ch in channels:
+            link = (ch['channel_link'] or "").replace('"', '""')
+            cid = str(ch['channel_id'] or "")
+            status = "Enabled" if ch['enabled'] else "Disabled"
+            ct = ch['type'] or "channel"
+            output.write(f'"{link}","{cid}","{status}","{ct}"\n')
+            
+        content = output.getvalue()
+        type_label = "channels" if ctype == "channel" else "groups"
+        filename = f"{type_label}_export_{uid_str}.csv"
+        
+        content_bytes = content.encode('utf-8')
+        try:
+            file_obj = io.BytesIO(content_bytes)
+            file_obj.name = filename
+            
+            caption = "Ваш список каналов 📂" if ctype == "channel" else "Ваш список групп 📂"
+            await bot_client.send_file(
+                int(uid_str), 
+                file_obj, 
+                caption=caption,
+                force_document=True
+            )
+            return web.json_response({"status": "ok", "message": "sent_via_telegram"})
+        except Exception as bot_err:
+            log.error(f"Failed to send file via bot: {bot_err}")
+            return web.json_response({"error": "Бот не смог отправить файл. Попробуйте позже."}, status=500)
+    except Exception as e:
+        log.error(f"Channels Export error: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 @routes.get("/api/audit")

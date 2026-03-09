@@ -475,6 +475,11 @@
           <button onclick="selectAllTargets(false)">Снять всех</button>
         </div>
 
+        <div class="modal-actions" style="margin-top: 8px; border-top: 1px solid var(--border-color); padding-top: 12px; justify-content: center; gap: 8px;">
+          <button id="sort-recent-btn" onclick="sortTargets('recent')" style="font-size: 11px; padding: 6px 10px; background: rgba(139, 92, 246, 0.1); color: var(--button-color); border: 1px solid rgba(139, 92, 246, 0.2);">Сначала недавние</button>
+          <button id="sort-old-btn" onclick="sortTargets('old')" style="font-size: 11px; padding: 6px 10px; background: transparent; color: var(--hint-color); border: 1px solid var(--border-color);">Сначала давние</button>
+        </div>
+
         <div class="targets-list" id="targets-list-container">
           <!-- Rendered items -->
           <div style="text-align: center; color: var(--hint-color); padding: 20px;">Загрузка...</div>
@@ -871,25 +876,65 @@
           container.innerHTML = `<div style="text-align: center; color: var(--hint-color); padding: 20px;">Список пуст</div>`;
           return;
         }
-        container.innerHTML = allCrmContacts.map(c => `
-          <div class="target-item" onclick="toggleTarget('${c}')">
-            <input type="checkbox" ${selectedTargets.includes(c) ? 'checked' : ''} onclick="event.stopPropagation(); toggleTarget('${c}')" />
-            <div class="target-info">${c}</div>
-          </div>
-        `).join("");
+        container.innerHTML = allCrmContacts.map(c => {
+          const contactStr = typeof c === 'object' ? c.contact : c;
+          const isSelected = selectedTargets.some(t => (typeof t === 'object' ? t.contact : t) === contactStr);
+          
+          return `
+            <div class="target-item" onclick="toggleTarget('${contactStr}')">
+              <input type="checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); toggleTarget('${contactStr}')" />
+              <div class="target-info">
+                <div style="font-weight:600;">${contactStr}</div>
+                ${c.source ? `<div style="font-size:10px; opacity:0.6;">Ист: ${c.source}</div>` : ''}
+              </div>
+            </div>
+          `;
+        }).join("");
       }
 
-      function toggleTarget(contact) {
-        const idx = selectedTargets.indexOf(contact);
-        if (idx > -1) selectedTargets.splice(idx, 1);
-        else selectedTargets.push(contact);
+      function sortTargets(order) {
+        const btnRecent = document.getElementById("sort-recent-btn");
+        const btnOld = document.getElementById("sort-old-btn");
+
+        if (order === 'recent') {
+          allCrmContacts.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+          btnRecent.style.background = "rgba(139, 92, 246, 0.1)";
+          btnRecent.style.color = "var(--button-color)";
+          btnRecent.style.borderColor = "rgba(139, 92, 246, 0.2)";
+          btnOld.style.background = "transparent";
+          btnOld.style.color = "var(--hint-color)";
+          btnOld.style.borderColor = "var(--border-color)";
+        } else {
+          allCrmContacts.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+          btnOld.style.background = "rgba(139, 92, 246, 0.1)";
+          btnOld.style.color = "var(--button-color)";
+          btnOld.style.borderColor = "rgba(139, 92, 246, 0.2)";
+          btnRecent.style.background = "transparent";
+          btnRecent.style.color = "var(--hint-color)";
+          btnRecent.style.borderColor = "var(--border-color)";
+        }
+        renderTargets();
+        tg.HapticFeedback.impactOccurred("light");
+      }
+
+      function toggleTarget(contactStr) {
+        const idx = selectedTargets.findIndex(t => (typeof t === 'object' ? t.contact : t) === contactStr);
+        if (idx > -1) {
+          selectedTargets.splice(idx, 1);
+        } else {
+          const fullItem = allCrmContacts.find(c => c.contact === contactStr);
+          selectedTargets.push(fullItem || contactStr);
+        }
         renderTargets();
         updateSelectionInfo();
       }
 
       function selectAllTargets(select) {
-        if (select) selectedTargets = [...allCrmContacts];
-        else selectedTargets = [];
+        if (select) {
+          selectedTargets = [...allCrmContacts];
+        } else {
+          selectedTargets = [];
+        }
         renderTargets();
         updateSelectionInfo();
       }

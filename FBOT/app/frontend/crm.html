@@ -847,13 +847,19 @@
       }
 
       async function exportCRM() {
-        if (activeTab !== "contacts") {
-          showToast("Экспорт доступен только для контактов", true);
-          return;
-        }
         try {
           const isTMA = window.Telegram && window.Telegram.WebApp && userId;
-          const url = `${API_BASE}/api/crm/export` + (isTMA ? `?uid=${userId}` : "");
+          let url = "";
+          
+          if (activeTab === "contacts") {
+            url = `${API_BASE}/api/crm/export` + (isTMA ? `?uid=${userId}` : "");
+          } else if (activeTab === "channels") {
+            url = `${API_BASE}/api/channels/export?type=channel` + (isTMA ? `&uid=${userId}` : "");
+          } else if (activeTab === "groups") {
+            url = `${API_BASE}/api/channels/export?type=group` + (isTMA ? `&uid=${userId}` : "");
+          } else {
+            return;
+          }
           
           const res = await fetch(url, { headers: getAuthHeaders() });
           
@@ -862,7 +868,6 @@
             showToast(data.error || "Ошибка экспорта", true);
             return;
           }
-
           const data = await res.json();
           if (data.status === "ok") {
               tg.showAlert("Файл отправлен тебе в Telegram! 📂\nПроверь чат с ботом.");
