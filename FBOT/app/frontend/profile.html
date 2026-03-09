@@ -439,6 +439,20 @@
         animation: spin 0.8s linear infinite;
       }
       @keyframes spin { to { transform: rotate(360deg); } }
+
+      .btn-deep-link {
+        display: none;
+        background: var(--button-color);
+        color: white;
+        border: none;
+        border-radius: 16px;
+        padding: 14px;
+        width: 100%;
+        font-weight: 700;
+        margin-top: 16px;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
+      }
     </style>
   </head>
   <body>
@@ -539,6 +553,7 @@
         <div class="qr-timer-container" id="qr-timer-wrapper" style="display: none;">
           Обновление через: <span id="qr-timer-val">30</span>с
         </div>
+        <button id="btn-deep-link" class="btn-deep-link" onclick="openDeepLink()">💎 Войти на этом устройстве</button>
         
         <div id="password-input-container" style="display: none;">
           <label style="font-size: 14px; display: block; margin-bottom: 8px;">Введите 2FA пароль:</label>
@@ -612,6 +627,7 @@
       let userId = localStorage.getItem("user_id");
       let webToken = localStorage.getItem("web_token");
       let initData = tg.initData || "";
+      let _currentQRUrl = null;
 
       function hideAppLoader() {
         const loader = document.getElementById("app-loader");
@@ -711,6 +727,16 @@
       let _qrInterval = null;
       let _timerInterval = null;
 
+      function openDeepLink() {
+        if (_currentQRUrl) {
+            if (tg && tg.openTelegramLink) {
+                tg.openTelegramLink(_currentQRUrl);
+            } else {
+                window.location.href = _currentQRUrl;
+            }
+        }
+      }
+
       async function showQRAuthScreen() {
         // Сброс старых интервалов
         if (_qrInterval) clearInterval(_qrInterval);
@@ -739,6 +765,8 @@
           const qrContainer = document.getElementById("qrcode-container");
           qrContainer.innerHTML = "";
           new QRCode(qrContainer, { text: data.url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.H });
+          _currentQRUrl = data.url;
+          document.getElementById("btn-deep-link").style.display = "block";
           document.getElementById("auth-instructions").innerHTML = "Отсканируйте код в<br><b>Устройства ➡️ Подключить</b>";
           document.getElementById("qr-timer-wrapper").style.display = "flex";
           

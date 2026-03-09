@@ -194,7 +194,6 @@ async def openai_gate(text: str) -> bool:
         resp = await openai_client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": f"Message:\n{text}"}],
-            temperature=0,
         )
         out = (resp.choices[0].message.content or "").strip().upper()
         return out.startswith("Y")
@@ -1819,14 +1818,16 @@ async def api_run_mail(request):
         if not udata: return web.json_response({"error": "Not registered"}, status=404)
         
         if isinstance(provided_targets, list) and len(provided_targets) > 0:
-            ml = provided_targets
+            targets = provided_targets
         else:
             ml = await db.get_crm_contacts(uid_str)
+            limit = min(int(udata.get("mail_limit", 50)), len(ml))
+            if limit == 0: return web.json_response({"error": "Base is empty or limit 0"}, status=400)
+            targets = ml[:limit]
             
-        limit = min(int(udata.get("mail_limit", 50)), len(ml))
-        
-        if limit == 0: return web.json_response({"error": "Base is empty or limit 0"}, status=400)
-        
+        if not targets:
+            return web.json_response({"error": "No targets selected"}, status=400)
+            
         client = user_clients.get(uid_str)
         if not client: return web.json_response({"error": "User client offline"}, status=400)
             
@@ -1834,7 +1835,6 @@ async def api_run_mail(request):
             return web.json_response({"error": "Рассылка уже запущена! Дождитесь окончания."}, status=400)
 
         active_mailings.add(uid_str)
-        targets = ml[:limit]
         
         async def background_mailer():
             try:
