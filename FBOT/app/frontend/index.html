@@ -415,7 +415,7 @@
             <div style="font-weight: 700; font-size: 17px; margin-bottom: 10px">Поиск заказов</div>
             <button class="btn btn-secondary" style="margin: 0; width: auto; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 12px; padding: 10px 16px;" onclick="openChannelPickerModal()">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 12l2 2 4-4"/></svg>
-              Выбрать каналы <span id="channel-selection-badge" style="display: none; background: var(--button-color); color: white; padding: 1px 6px; border-radius: 8px; font-size: 10px;">0</span>
+              Каналы и группы <span id="channel-selection-badge" style="display: none; background: var(--button-color); color: white; padding: 1px 6px; border-radius: 8px; font-size: 10px;">0</span>
             </button>
           </div>
           <label class="switch">
@@ -487,7 +487,7 @@
     <!-- Channel Picker Modal -->
     <div id="channel-picker-backdrop" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); z-index: 1000; display: none; justify-content: center; align-items: center; padding: 20px;" onclick="if(event.target === this) closeChannelPickerModal()">
       <div class="mailing-targets-card">
-        <div style="font-weight: 700; font-size: 18px; margin-bottom: 16px; text-align: center;">Выбор каналов для поиска</div>
+        <div style="font-weight: 700; font-size: 18px; margin-bottom: 16px; text-align: center;">Каналы и группы для поиска</div>
         
         <div class="modal-actions">
           <button onclick="selectAllChannels(true)">Выбрать всех</button>
@@ -936,12 +936,19 @@
           container.innerHTML = `<div style="text-align: center; color: var(--hint-color); padding: 20px;">Список пуст. Добавьте каналы в разделе CRM.</div>`;
           return;
         }
-        container.innerHTML = allUserChannels.map(ch => `
-          <div class="target-item" onclick="toggleChannelSelection('${ch.channel_link}')">
-            <input type="checkbox" ${ch.enabled ? 'checked' : ''} onclick="event.stopPropagation(); toggleChannelSelection('${ch.channel_link}')" />
-            <div class="target-info">${ch.channel_link}</div>
-          </div>
-        `).join("");
+        container.innerHTML = allUserChannels.map(ch => {
+          const typeLabel = ch.type === 'group' ? 'Группа' : 'Канал';
+          const typeColor = ch.type === 'group' ? '#10b981' : '#3b82f6';
+          return `
+            <div class="target-item" onclick="toggleChannelSelection('${ch.channel_link}')">
+              <input type="checkbox" ${ch.enabled ? 'checked' : ''} onclick="event.stopPropagation(); toggleChannelSelection('${ch.channel_link}')" />
+              <div class="target-info">
+                <div>${ch.channel_link}</div>
+                <div style="font-size: 10px; color: ${typeColor}; opacity: 0.8; font-weight: 600; text-transform: uppercase; margin-top: 2px;">${typeLabel}</div>
+              </div>
+            </div>
+          `;
+        }).join("");
       }
 
       function toggleChannelSelection(link) {

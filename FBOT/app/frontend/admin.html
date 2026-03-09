@@ -107,6 +107,22 @@
         font-size: 14px; font-weight: 600; display: none;
         z-index: 1000;
       }
+
+      .stats-row {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+      .stat-pill {
+        background: var(--secondary-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 14px 20px;
+        flex: 1;
+        text-align: center;
+      }
+      .stat-pill .val { font-size: 28px; font-weight: 800; background: var(--accent-gradient); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+      .stat-pill .lbl { font-size: 11px; color: var(--hint-color); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
     </style>
   </head>
   <body>
@@ -136,7 +152,17 @@
       <button class="back-btn" style="background: var(--button-color); border: none; margin-left: auto;" onclick="addUser()">+ Добавить</button>
     </div>
 
-    <input type="text" id="search" placeholder="Поиск по имени или телефону..." oninput="renderUsers()" />
+    <div class="stats-row">
+      <div class="stat-pill">
+        <div class="val" id="stat-total">—</div>
+        <div class="lbl">Всего пользователей</div>
+      </div>
+      <div class="stat-pill">
+        <div class="val" id="stat-active">—</div>
+        <div class="lbl">Активных</div>
+      </div>
+    </div>
+
 
     <div id="users-list"></div>
     <div id="toast"></div>
@@ -162,6 +188,10 @@
           const data = await res.json();
           if (res.ok) {
             users = data.users;
+            // Обновляем счётчики
+            document.getElementById("stat-total").innerText = users.length;
+            const activeCount = users.filter(u => u.expires_at === "Безлимит" || u.expires_at > new Date().toISOString().slice(0,16)).length;
+            document.getElementById("stat-active").innerText = activeCount;
             renderUsers();
           } else {
             showToast(data.error || "Ошибка доступа");

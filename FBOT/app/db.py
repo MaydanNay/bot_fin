@@ -4,7 +4,19 @@ import json
 import logging
 import asyncio
 import asyncpg
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import calendar
+
+# Часовой пояс UTC+5 (Казахстан / Алматы)
+TZ_KZ = timezone(timedelta(hours=5))
+
+def add_months_exact(dt: datetime, months: int) -> datetime:
+    """Прибавляет точное количество календарных месяцев к дате."""
+    month = dt.month - 1 + months
+    year = dt.year + month // 12
+    month = month % 12 + 1
+    day = min(dt.day, calendar.monthrange(year, month)[1])
+    return dt.replace(year=year, month=month, day=day)
 from typing import Optional, Dict, List, Any
 from dotenv import load_dotenv
 
@@ -183,7 +195,9 @@ async def admin_add_user(phone: str, months: int = 0):
     
     expires_at = None
     if months > 0:
-        expires_at = datetime.now() + timedelta(days=30 * months)
+        # Точный календарный расчёт с учётом часового пояса UTC+5
+        now_kz = datetime.now(TZ_KZ)
+        expires_at = add_months_exact(now_kz, months)
         
     async with pool.acquire() as conn:
         await conn.execute("""
@@ -453,21 +467,46 @@ async def get_all_users() -> List[Dict[str, Any]]:
 async def update_user_access(phone: str, months: int):
     if not pool: return
     async with pool.acquire() as conn:
-        # Check if user has expires_at
         user = await conn.fetchrow("SELECT expires_at FROM users WHERE phone = $1", phone)
         if not user: return
         
-        from datetime import timedelta
         current_expiry = user['expires_at']
-        now = datetime.now()
+        now_kz = datetime.now(TZ_KZ)
         
-        # If already expired or never set, start from now
-        if not current_expiry or (current_expiry.tzinfo and current_expiry < now.replace(tzinfo=current_expiry.tzinfo)) or (not current_expiry.tzinfo and current_expiry < now):
-            start_date = now
+        # Если срок уже истёк или не установлен — стартуем от текущей даты UTC+5
+        if not current_expiry:
+            start_date = now_kz
         else:
-            start_date = current_expiry
+            # Нормализуем для сравнения
+            exp = current_expiry
+            if exp.tzinfo:
+                exp_kz = exp.astimezone(TZ_KZ)
+            else:
+                exp_kz = exp.replace(tzinfo=TZ_KZ)
+            start_date = exp_kz if exp_kz > now_kz else now_kz
             
-        # Add months (approx 30 days per month)
-        new_expiry = start_date + timedelta(days=30 * months)
+        # Точный календарный расчёт
+        new_expiry = add_months_exact(start_date, months)
         await conn.execute("UPDATE users SET expires_at = $1 WHERE phone = $2", new_expiry, phone)
         return new_expiry
+
+async def clear_user_session(uid: str) -> bool:
+    """Сбрасывает session_string пользователя (выход из Telegram-аккаунта)."""
+    if not pool: return False
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "UPDATE users SET session_string = NULL WHERE uid = $1",
+            uid
+        )
+        return result != "UPDATE 0"
+
+async def delete_user(uid: str) -> bool:
+    """Полностью удаляет пользователя и все его данные из базы."""
+    if not pool: return False
+    async with pool.acquire() as conn:
+        # Удаляем данные из связанных таблиц
+        await conn.execute("DELETE FROM crm WHERE uid = $1", uid)
+        await conn.execute("DELETE FROM channels WHERE uid = $1", uid)
+        # Удаляем самого пользователя
+        result = await conn.execute("DELETE FROM users WHERE uid = $1", uid)
+        return result != "DELETE 0"

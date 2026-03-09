@@ -293,9 +293,13 @@ def make_watcher_handler(uid_str: str):
             # Check expiry
             expires_at = u_data.get("expires_at")
             if expires_at:
-                now = datetime.now()
-                if expires_at.tzinfo:
-                    now = now.replace(tzinfo=expires_at.tzinfo)
+                now = datetime.now(db.TZ_KZ)
+                # Если в базе дата без часового пояса, приводим 'now' к такому же виду для сравнения
+                if expires_at.tzinfo is None:
+                    now = now.replace(tzinfo=None)
+                else:
+                    now = now.astimezone(expires_at.tzinfo)
+                
                 if expires_at < now:
                     return
 
@@ -417,7 +421,8 @@ def make_watcher_handler(uid_str: str):
                     final = "sent"
                     
                     # Сохраняем статистику и добавляем в базу рассылки
-                    today_str = str(datetime.now().date())
+                    today_dt = datetime.now(db.TZ_KZ)
+                    today_str = str(today_dt.date())
                     
                     # Fetch fresh data for update
                     current_u_data = await db.get_user(uid_str)
@@ -426,7 +431,7 @@ def make_watcher_handler(uid_str: str):
                         current_daily_sent = current_u_data.get("daily_sent", 0)
                         
                         if current_daily_date != today_str:
-                            await db.update_user_field(uid_str, "daily_date", datetime.now().date())
+                            await db.update_user_field(uid_str, "daily_date", today_dt.date())
                             await db.update_user_field(uid_str, "daily_sent", 1)
                         else:
                             await db.update_user_field(uid_str, "daily_sent", current_daily_sent + 1)
@@ -727,7 +732,7 @@ async def finalize_login(user_id: int):
         "keywords": DEFAULT_KEYWORDS.copy(),
         "negative_words": DEFAULT_NEGATIVE_WORDS.copy(),
         "daily_sent": 0,
-        "daily_date": datetime.now().date(),
+        "daily_date": datetime.now(db.TZ_KZ).date(),
         "mail_limit": 50
     }
     await db.upsert_user(uid_str, user_db_data)
@@ -1078,7 +1083,7 @@ async def daily_report_task():
     """Фоновая задача для отправки вечерних отчетов (в 21:00)"""
     log.info("Started daily report background task.")
     while True:
-        now = datetime.now()
+        now = datetime.now(db.TZ_KZ)
         if now.hour == 21 and now.minute == 0:
             today_str = now.strftime("%Y-%m-%d")
             uids = await db.get_all_uids()
@@ -1269,7 +1274,7 @@ async def finalize_webapp_login(w_session):
         "keywords": DEFAULT_KEYWORDS.copy(),
         "negative_words": DEFAULT_NEGATIVE_WORDS.copy(),
         "daily_sent": 0,
-        "daily_date": datetime.now().date(),
+        "daily_date": datetime.now(db.TZ_KZ).date(),
         "mail_limit": 50
     }
     await db.upsert_user(uid_str, user_db_data)
@@ -1390,9 +1395,12 @@ async def api_get_state(request):
     expires_at = udata.get("expires_at")
     expired = False
     if expires_at:
-        now = datetime.now()
-        if expires_at.tzinfo:
-            now = now.replace(tzinfo=expires_at.tzinfo)
+        now = datetime.now(db.TZ_KZ)
+        if expires_at.tzinfo is None:
+            now = now.replace(tzinfo=None)
+        else:
+            now = now.astimezone(expires_at.tzinfo)
+        
         if expires_at < now:
             expired = True
 
@@ -1524,7 +1532,7 @@ async def api_get_profile(request):
         "total_crm": crm_count,
         "avatar_url": await download_user_avatar(uid_str),
         "expires_at": expires_str,
-        "expired": (expires_at < datetime.now().replace(tzinfo=expires_at.tzinfo)) if expires_at and expires_at.tzinfo else (expires_at < datetime.now() if expires_at else False),
+        "expired": (expires_at < datetime.now(db.TZ_KZ).replace(tzinfo=expires_at.tzinfo)) if expires_at and expires_at.tzinfo else (expires_at < datetime.now(db.TZ_KZ).replace(tzinfo=None) if expires_at else False),
         "version": "1.2.0"
     }
     return web.json_response(profile_data)
@@ -1967,6 +1975,53 @@ async def api_run_mail(request):
 
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
+
+@routes.post("/api/logout")
+async def api_logout(request):
+    """Выход из Telegram: сбрасывает сессию юзербота, не удаляет аккаунт."""
+    uid_str = await get_auth_user_id(request)
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    try:
+        # Останавливаем активного клиента
+        client = user_clients.pop(uid_str, None)
+        if client:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+        # Сбрасываем session_string в БД
+        await db.clear_user_session(uid_str)
+        log.info(f"User {uid_str} logged out (session cleared)")
+        return web.json_response({"status": "ok"})
+    except Exception as e:
+        log.error(f"Logout error for {uid_str}: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+@routes.post("/api/account/delete")
+async def api_account_delete(request):
+    """Полное удаление аккаунта: удаляет все данные, останавливает юзербот."""
+    uid_str = await get_auth_user_id(request)
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    try:
+        # Останавливаем юзербот
+        client = user_clients.pop(uid_str, None)
+        if client:
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+        # Удаляем все данные из БД
+        deleted = await db.delete_user(uid_str)
+        if not deleted:
+            return web.json_response({"error": "Пользователь не найден"}, status=404)
+        log.info(f"User {uid_str} account DELETED")
+        return web.json_response({"status": "ok"})
+    except Exception as e:
+        log.error(f"Delete account error for {uid_str}: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
 async def init_web_server():
     app = web.Application()
     app.add_routes(routes)
