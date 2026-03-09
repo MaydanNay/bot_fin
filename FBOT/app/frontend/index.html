@@ -636,10 +636,16 @@
 
       function openDeepLink() {
         if (_currentQRUrl) {
+            let url = _currentQRUrl;
+            // Telegram WebApp API лучше работает с t.me ссылками
+            if (url.startsWith('tg://login')) {
+                url = url.replace('tg://login', 'https://t.me/login');
+            }
+            
             if (tg && tg.openTelegramLink) {
-                tg.openTelegramLink(_currentQRUrl);
+                tg.openTelegramLink(url);
             } else {
-                window.location.href = _currentQRUrl;
+                window.location.href = url;
             }
         }
       }
