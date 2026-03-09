@@ -63,7 +63,8 @@ async def init_db():
         # Users: Phone is PK to support web-registration before Telegram link
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
-                phone VARCHAR(32) PRIMARY KEY
+                phone VARCHAR(32) PRIMARY KEY,
+                uid VARCHAR(64) UNIQUE
             );
         """)
         
