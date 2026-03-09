@@ -254,7 +254,7 @@ async def download_user_avatar(uid_str: str) -> Optional[str]:
     # Кэш на 1 час
     if os.path.exists(avatar_path):
         mtime = os.path.getmtime(avatar_path)
-        if datetime.now().timestamp() - mtime < 3600:
+        if datetime.now(db.TZ_KZ).timestamp() - mtime < 3600:
             return f"/avatars/{uid_str}.jpg"
             
     # Приоритет 1: Юзербот
@@ -493,8 +493,14 @@ def make_watcher_handler(uid_str: str):
     return watcher
 
 # ================== Команды Бота Управления ==================
-def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS
+def is_admin(user_id: Any) -> bool:
+    """Проверяет, является ли пользователь администратором (по ID или префиксу)."""
+    uid_str = str(user_id)
+    if uid_str.startswith("admin_"):
+        return True
+    if uid_str.isdigit() and int(uid_str) in ADMIN_IDS:
+        return True
+    return False
 
 AWAITING_PASSWORD = set()
 ADMIN_PASSWORD = "Maidan is a brilliant and great man of the 21st century"
@@ -1407,11 +1413,11 @@ async def api_get_state(request):
     resp = dict(udata)
     resp["avatar_url"] = avatar_url
     
-    is_admin = int(uid_str) in ADMIN_IDS if uid_str.isdigit() else False
-    resp["is_admin"] = is_admin
+    is_admin_flag = is_admin(uid_str)
+    resp["is_admin"] = is_admin_flag
     
     # Срок доступа
-    if is_admin:
+    if is_admin_flag:
         resp["expires_at"] = "Безлимит"
     else:
         exp = udata.get("expires_at")
@@ -1483,9 +1489,9 @@ async def api_get_profile(request):
     
     # Check expiry
     expires_at = udata.get("expires_at")
-    is_admin = int(uid_str) in ADMIN_IDS if uid_str.isdigit() else False
+    is_admin_flag = is_admin(uid_str)
     
-    if is_admin:
+    if is_admin_flag:
         expires_str = "Безлимит"
     else:
         expires_str = expires_at.strftime("%Y-%m-%d %H:%M") if expires_at else "Безлимит"
@@ -1527,7 +1533,7 @@ async def api_get_profile(request):
         "name": name or "Пользователь",
         "username": username,
         "phone": udata.get("phone", "Unknown"),
-        "is_admin": is_admin,
+        "is_admin": is_admin_flag,
         "daily_sent": udata.get("daily_sent", 0),
         "total_crm": crm_count,
         "avatar_url": await download_user_avatar(uid_str),
@@ -1676,16 +1682,15 @@ async def api_crm_delete(request):
 @routes.get("/api/admin/users")
 async def api_admin_users(request):
     uid_str = await get_auth_user_id(request)
-    if not uid_str or not uid_str.isdigit() or int(uid_str) not in ADMIN_IDS:
+    if not uid_str or not is_admin(uid_str):
         return web.json_response({"error": "Forbidden"}, status=403)
     try:
         users = await db.get_all_users()
         # Clean up some data for security if needed
         for u in users:
             uid = u.get('uid')
-            is_u_admin = False
-            if uid and str(uid).isdigit():
-                is_u_admin = int(uid) in ADMIN_IDS
+            is_u_admin = is_admin(uid)
+            u['is_admin'] = is_u_admin # Передаем флаг для UI
                 
             if is_u_admin:
                 u['expires_at'] = "Безлимит"
@@ -1707,7 +1712,7 @@ async def api_admin_users(request):
 @routes.post("/api/admin/update_access")
 async def api_admin_update_access(request):
     uid_str = await get_auth_user_id(request)
-    if not uid_str or not uid_str.isdigit() or int(uid_str) not in ADMIN_IDS:
+    if not uid_str or not is_admin(uid_str):
         return web.json_response({"error": "Forbidden"}, status=403)
     try:
         data = await request.json()
@@ -1726,7 +1731,7 @@ async def api_admin_update_access(request):
 @routes.post("/api/admin/add_user")
 async def api_admin_add_user(request):
     uid_str = await get_auth_user_id(request)
-    if not uid_str or not uid_str.isdigit() or int(uid_str) not in ADMIN_IDS:
+    if not uid_str or not is_admin(uid_str):
         return web.json_response({"error": "Forbidden"}, status=403)
     try:
         data = await request.json()
@@ -1810,7 +1815,7 @@ async def api_channels_list(request):
         return web.json_response({"error": "Unauthorized"}, status=401)
     try:
         q = request.query.get("q", "").strip()
-        ctype = request.query.get("type", "channel").strip()
+        ctype = request.query.get("type", "").strip() or None
         channels = await db.get_channels(uid_str, query=q, ctype=ctype)
         return web.json_response({"channels": channels})
     except Exception as e:

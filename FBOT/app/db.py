@@ -187,7 +187,7 @@ async def register_web_user(phone: str, password_hash: str):
             INSERT INTO users (uid, phone, password_hash, keywords, negative_words, daily_date)
             VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (phone) DO NOTHING
-        """, uid, phone, password_hash, "[]", "[]", datetime.now().date())
+        """, uid, phone, password_hash, "[]", "[]", datetime.now(TZ_KZ).date())
 
 async def admin_add_user(phone: str, months: int = 0):
     if not pool: return None
@@ -206,7 +206,7 @@ async def admin_add_user(phone: str, months: int = 0):
             ON CONFLICT (phone) DO UPDATE SET 
                 expires_at = EXCLUDED.expires_at,
                 uid = CASE WHEN users.uid IS NULL THEN EXCLUDED.uid ELSE users.uid END
-        """, uid, phone, "[]", "[]", datetime.now().date(), expires_at)
+        """, uid, phone, "[]", "[]", datetime.now(TZ_KZ).date(), expires_at)
     return True
 
 async def link_telegram_to_phone(phone: str, uid: str, session_str: str, name: str = None, username: str = None):

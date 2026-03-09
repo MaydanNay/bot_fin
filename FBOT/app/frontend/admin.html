@@ -123,6 +123,20 @@
       }
       .stat-pill .val { font-size: 28px; font-weight: 800; background: var(--accent-gradient); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
       .stat-pill .lbl { font-size: 11px; color: var(--hint-color); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+      
+      .badge-admin {
+        background: var(--accent-gradient);
+        color: white;
+        padding: 4px 8px;
+        border-radius: 8px;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        display: inline-block;
+        margin-left: 6px;
+        vertical-align: middle;
+      }
     </style>
   </head>
   <body>
@@ -215,7 +229,10 @@
             <div class="user-info">
               <div class="avatar">${(u.name || "?")[0].toUpperCase()}</div>
               <div class="details">
-                <div class="name">${u.name || "Без имени"} (${u.phone})</div>
+                <div class="name">
+                  ${u.name || "Без имени"} (${u.phone})
+                  ${u.is_admin ? '<span class="badge-admin">Администратор</span>' : ''}
+                </div>
                 <div class="expiry">До: ${u.expires_at || "Бессрочно"}</div>
               </div>
             </div>
