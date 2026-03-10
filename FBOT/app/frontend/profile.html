@@ -203,6 +203,7 @@
         display: flex;
         flex-direction: column;
         gap: 10px;
+        margin-bottom: 20px;
       }
 
       .menu-item {
@@ -665,7 +666,8 @@
 
     <script>
       const tg = window.Telegram.WebApp;
-      tg.expand();
+      // Задержка расширения для предотвращения InvalidStateError в Telegram Web K
+      setTimeout(() => tg.expand(), 200);
       
       // Compatibility shim for older Telegram versions (< 6.2)
       if (!tg.isVersionAtLeast('6.2')) {
@@ -984,11 +986,13 @@
           } catch(e) { tg.showAlert("Ошибка сохранения пароля"); }
       }
 
-      (async () => {
+      // Задержка инициализации для стабильности в Web K
+      setTimeout(async () => {
         await fetchProfile();
         await loadAudit();
-        document.getElementById("loading").style.display = "none";
-      })();
+        const loadingEl = document.getElementById("loading");
+        if (loadingEl) loadingEl.style.display = "none";
+      }, 150);
 
       async function logoutTelegram() {
         tg.showConfirm("Выйти из Telegram?\n\nЮзербот будет отключён. Для дальнейшей работы потребуется повторное подключение.", async (ok) => {

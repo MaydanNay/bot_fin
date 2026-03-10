@@ -547,7 +547,10 @@
 
     <script>
       const tg = window.Telegram.WebApp;
-      if (tg) tg.expand();
+      if (tg) {
+          // Задержка расширения для предотвращения InvalidStateError в Telegram Web K
+          setTimeout(() => tg.expand(), 200);
+      }
 
       const API_BASE = "";
       let webToken = localStorage.getItem("web_token");
@@ -1125,8 +1128,11 @@
 
       powerToggle.addEventListener("change", saveConfig);
       (async () => {
-        await checkAuth();
-        if (userId) await loadUserChannels();
+        // Задержка инициализации для стабильности в Web K
+        setTimeout(async () => {
+            await checkAuth();
+            if (userId) await loadUserChannels();
+        }, 150);
       })();
     </script>
   </body>

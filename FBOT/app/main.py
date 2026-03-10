@@ -1615,7 +1615,7 @@ async def api_crm_export(request):
             return web.json_response({"error": "No contacts to export"}, status=404)
             
         output = io.StringIO()
-        output.write("Contact,Added At,Source\n")
+        output.write("\ufeffКонтакт;Добавлено;Источник\n")
         for c in contacts:
             raw_date = c.get('created_at')
             if isinstance(raw_date, str):
@@ -1626,7 +1626,7 @@ async def api_crm_export(request):
                 added_at = ""
             source = (c['source'] or "").replace('"', '""')
             contact = c['contact'].replace('"', '""')
-            output.write(f'"{contact}","{added_at}","{source}"\n')
+            output.write(f'"{contact}";"{added_at}";"{source}"\n')
             
         content = output.getvalue()
         filename = f"crm_export_{uid_str}.csv"
@@ -1665,13 +1665,13 @@ async def api_channels_export(request):
             return web.json_response({"error": f"No {ctype}s to export"}, status=404)
             
         output = io.StringIO()
-        output.write("Link,ID,Status,Type\n")
+        output.write("\ufeffСсылка;ID;Статус;Тип\n")
         for ch in channels:
             link = (ch['channel_link'] or "").replace('"', '""')
             cid = str(ch['channel_id'] or "")
-            status = "Enabled" if ch['enabled'] else "Disabled"
-            ct = ch['type'] or "channel"
-            output.write(f'"{link}","{cid}","{status}","{ct}"\n')
+            status = "Включен" if ch['enabled'] else "Выключен"
+            ct = "Группа" if (ch.get('type') == 'group' or ctype == 'group') else "Канал"
+            output.write(f'"{link}";"{cid}";"{status}";"{ct}"\n')
             
         content = output.getvalue()
         type_label = "channels" if ctype == "channel" else "groups"

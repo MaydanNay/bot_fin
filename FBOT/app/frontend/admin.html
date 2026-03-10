@@ -313,8 +313,9 @@
         } catch (e) { showToast("Ошибка"); }
       }
 
-      if (tg) tg.expand();
-      loadUsers();
+      // Задержка расширения и загрузки для стабильности в Web K
+      if (tg) setTimeout(() => tg.expand(), 150);
+      setTimeout(() => loadUsers(), 100);
     </script>
   </body>
 </html>

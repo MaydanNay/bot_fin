@@ -176,7 +176,6 @@
         font-size: 16px;
         font-weight: 700;
         cursor: pointer;
-        margin-bottom: 20px;
         transition: all 0.2s;
       }
       .btn-primary:active { transform: scale(0.98); }
@@ -589,7 +588,8 @@
 
     <script>
       const tg = window.Telegram.WebApp;
-      tg.expand();
+      // Задержка расширения для предотвращения InvalidStateError в Telegram Web K
+      setTimeout(() => tg.expand(), 150);
       
       // Compatibility shim for older Telegram versions (< 6.2)
       if (!tg.isVersionAtLeast('6.2')) {
@@ -985,6 +985,11 @@
       function closeInfoModal() {
         document.getElementById("info-backdrop").classList.remove("show");
       }
+
+      // Начальная загрузка с задержкой для стабильности
+      setTimeout(() => {
+        loadData();
+      }, 100);
 
     </script>
   </body>
