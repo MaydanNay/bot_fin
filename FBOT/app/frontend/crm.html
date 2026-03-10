@@ -588,8 +588,7 @@
 
     <script>
       const tg = window.Telegram.WebApp;
-      // Задержка расширения для предотвращения InvalidStateError в Telegram Web K
-      setTimeout(() => tg.expand(), 150);
+      // Инициализация будет в window.onload ниже
       
       // Compatibility shim for older Telegram versions (< 6.2)
       if (!tg.isVersionAtLeast('6.2')) {
@@ -881,10 +880,6 @@
         }
       }
 
-      (async () => {
-        await loadData();
-        document.getElementById("loading").style.display = "none";
-      })();
 
       async function collectFromChats() {
         tg.HapticFeedback.impactOccurred("medium");
@@ -986,10 +981,18 @@
         document.getElementById("info-backdrop").classList.remove("show");
       }
 
-      // Начальная загрузка с задержкой для стабильности
-      setTimeout(() => {
-        loadData();
-      }, 100);
+      window.onload = () => {
+        if (tg) {
+          tg.ready();
+          setTimeout(() => tg.expand(), 500);
+        }
+        // Начальная загрузка с задержкой для стабильности
+        setTimeout(() => {
+          loadData();
+          const loadingEl = document.getElementById("loading");
+          if (loadingEl) loadingEl.style.display = "none";
+        }, 500);
+      };
 
     </script>
   </body>

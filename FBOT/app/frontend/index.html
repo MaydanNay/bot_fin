@@ -547,10 +547,7 @@
 
     <script>
       const tg = window.Telegram.WebApp;
-      if (tg) {
-          // Задержка расширения для предотвращения InvalidStateError в Telegram Web K
-          setTimeout(() => tg.expand(), 200);
-      }
+      // Инициализация будет в window.onload ниже
 
       const API_BASE = "";
       let webToken = localStorage.getItem("web_token");
@@ -833,10 +830,7 @@
       }
 
       function cancel2FA() {
-          document.getElementById("password-input-container").style.display = "none";
-          document.getElementById("qrcode-container").style.display = "block";
-          document.getElementById("qr-timer-wrapper").style.display = "block";
-          document.getElementById("auth-instructions").innerText = "Отсканируйте QR-код для входа";
+          showQRAuthScreen();
       }
 
       async function saveConfig(btn) {
@@ -1127,13 +1121,18 @@
       }
 
       powerToggle.addEventListener("change", saveConfig);
-      (async () => {
+      
+      window.onload = () => {
+        if (tg) {
+          tg.ready();
+          setTimeout(() => tg.expand(), 500);
+        }
         // Задержка инициализации для стабильности в Web K
         setTimeout(async () => {
             await checkAuth();
             if (userId) await loadUserChannels();
-        }, 150);
-      })();
+        }, 500);
+      };
     </script>
   </body>
 </html>

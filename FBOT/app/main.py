@@ -1225,7 +1225,8 @@ async def api_qr_login(request):
             "uid": sender_id,
             "original_uid": sender_id,
             "status": "pending",
-            "is_guest": is_guest
+            "is_guest": is_guest,
+            "created_at": time.time()
         }
         
         # Фоновая задача ожидания
@@ -1316,14 +1317,25 @@ async def finalize_webapp_login(w_session):
     except: pass
     
     # Запуск юзербота
+    if uid_str in user_clients:
+        try:
+            log.info(f"Disconnecting old client for UID {uid_str} before re-auth")
+            await user_clients[uid_str].disconnect()
+        except: pass
+
     new_client = TelegramClient(
         StringSession(session_str), API_ID, API_HASH,
         device_model="Desktop", system_version="Windows 11", app_version="4.6.1",
         lang_code="en", system_lang_code="en"
     )
     await new_client.connect()
-    user_clients[uid_str] = new_client
-    new_client.add_event_handler(make_watcher_handler(uid_str), events.NewMessage())
+    
+    if await new_client.is_user_authorized():
+        user_clients[uid_str] = new_client
+        new_client.add_event_handler(make_watcher_handler(uid_str), events.NewMessage())
+    else:
+        log.error(f"Failed to authorize new client for UID {uid_str} after finalize")
+        return {"status": "error", "error": "Authorization failed after login"}
     
     return {
         "status": "success",
@@ -1395,9 +1407,36 @@ async def api_2fa_login(request):
             else:
                 return web.json_response({"error": "Unknown login failure"}, status=400)
         except Exception as e:
-            return web.json_response({"error": str(e)}, status=400)
+            err_msg = str(e)
+            if "password is invalid" in err_msg.lower():
+                err_msg = "Неверный пароль 2FA! Попробуйте еще раз."
+            elif "too many attempts" in err_msg.lower():
+                err_msg = "Слишком много попыток! Подождите немного."
+            return web.json_response({"error": err_msg}, status=400)
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
+
+async def webapp_qr_cleanup_task():
+    """Фоновая задача для очистки старых QR/2FA сессий (TTL 5 минут)."""
+    while True:
+        try:
+            await asyncio.sleep(60)
+            now = time.time()
+            to_delete = []
+            for sid, sdata in webapp_qr_sessions.items():
+                # Если сессия старше 5 минут - удаляем
+                if now - sdata.get("created_at", 0) > 300:
+                    to_delete.append(sid)
+            
+            for sid in to_delete:
+                log.info(f"🧹 Cleaning up expired QR session: {sid}")
+                sdata = webapp_qr_sessions.pop(sid, None)
+                if sdata and "client" in sdata:
+                    try:
+                        await sdata["client"].disconnect()
+                    except: pass
+        except Exception as e:
+            log.error(f"Error in webapp_qr_cleanup_task: {e}")
 
 @routes.get("/api/state")
 async def api_get_state(request):
@@ -2150,6 +2189,7 @@ async def main():
     await start_all_clients()
     
     asyncio.create_task(daily_report_task())
+    asyncio.create_task(webapp_qr_cleanup_task())
     asyncio.create_task(init_web_server())
     
     log.info("System fully operational.")

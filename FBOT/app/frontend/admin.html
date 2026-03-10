@@ -313,9 +313,14 @@
         } catch (e) { showToast("Ошибка"); }
       }
 
-      // Задержка расширения и загрузки для стабильности в Web K
-      if (tg) setTimeout(() => tg.expand(), 150);
-      setTimeout(() => loadUsers(), 100);
+      window.onload = () => {
+        if (tg) {
+          tg.ready();
+          setTimeout(() => tg.expand(), 500);
+        }
+        // Задержка загрузки для стабильности в Web K
+        setTimeout(() => loadUsers(), 500);
+      };
     </script>
   </body>
 </html>
