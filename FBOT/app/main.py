@@ -14,6 +14,7 @@ import asyncio
 import logging
 import pathlib
 import uuid
+import time
 import hmac
 import hashlib
 from urllib.parse import parse_qsl
@@ -1526,9 +1527,17 @@ async def handle_admin(request):
 
 @routes.get("/api/profile")
 async def api_get_profile(request):
-    uid_str = request.query.get("uid") or await get_auth_user_id(request)
-    if not uid_str:
+    auth_uid = await get_auth_user_id(request)
+    if not auth_uid:
         return web.json_response({"error": "Unauthorized"}, status=401)
+    
+    target_uid = request.query.get("uid")
+    if target_uid and target_uid != auth_uid:
+        if not is_admin(auth_uid):
+            return web.json_response({"error": "Forbidden"}, status=403)
+        uid_str = target_uid
+    else:
+        uid_str = auth_uid
     
     udata = await db.get_user(uid_str)
     if not udata or not udata.get("session_string"): 
@@ -1738,9 +1747,17 @@ async def api_channels_export(request):
 
 @routes.get("/api/audit")
 async def api_get_audit(request):
-    uid_str = request.query.get("uid") or await get_auth_user_id(request)
-    if not uid_str:
+    auth_uid = await get_auth_user_id(request)
+    if not auth_uid:
         return web.json_response({"error": "Unauthorized"}, status=401)
+    
+    target_uid = request.query.get("uid")
+    if target_uid and target_uid != auth_uid:
+        if not is_admin(auth_uid):
+            return web.json_response({"error": "Forbidden"}, status=403)
+        uid_str = target_uid
+    else:
+        uid_str = auth_uid
         
     try:
         udata = await db.get_user(uid_str)

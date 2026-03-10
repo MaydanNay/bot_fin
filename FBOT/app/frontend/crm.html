@@ -181,6 +181,31 @@
       .btn-primary:active { transform: scale(0.98); }
       .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
+      .sort-tabs {
+        display: flex;
+        gap: 8px;
+        padding: 0 16px 16px;
+        margin-top: -10px;
+      }
+      .sort-btn {
+        flex: 1;
+        padding: 8px;
+        text-align: center;
+        background: var(--secondary-bg-color);
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--hint-color);
+        cursor: pointer;
+        transition: all 0.2s;
+        border: 1px solid transparent;
+      }
+      .sort-btn.active {
+        background: rgba(139, 92, 246, 0.1);
+        color: var(--button-color);
+        border-color: rgba(139, 92, 246, 0.2);
+      }
+
       /* Search */
       .search-wrap {
         padding: 0 16px 20px;
@@ -529,6 +554,11 @@
       <input type="text" id="search-input" placeholder="Поиск контактов..." oninput="onSearch()" />
     </div>
 
+    <div class="sort-tabs">
+      <div class="sort-btn active" id="sort-recent" onclick="setSort('recent')">Сначала недавние</div>
+      <div class="sort-btn" id="sort-old" onclick="setSort('old')">Сначала давние</div>
+    </div>
+
     <div class="contacts-list" id="contacts-list"></div>
 
     <div id="toast"></div>
@@ -606,6 +636,24 @@
       let activeTab = "contacts"; // "contacts" | "channels"
       let allItems = [];
       let searchTimer = null;
+      let currentSort = "recent";
+
+      function setSort(order) {
+        currentSort = order;
+        sortItems();
+      }
+
+      function sortItems() {
+        document.getElementById("sort-recent").classList.toggle("active", currentSort === "recent");
+        document.getElementById("sort-old").classList.toggle("active", currentSort === "old");
+        
+        if (currentSort === "recent") {
+          allItems.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+        } else {
+          allItems.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+        }
+        renderList(allItems);
+      }
 
       function hideAppLoader() {
         const loader = document.getElementById("app-loader");
@@ -753,9 +801,9 @@
               return;
           }
           
-          const list = activeTab === "contacts" ? data.contacts : data.channels;
-          document.getElementById("stat-total").innerText = list.length;
-          renderList(list);
+          allItems = activeTab === "contacts" ? data.contacts : data.channels;
+          document.getElementById("stat-total").innerText = allItems.length;
+          sortItems();
         } catch(e) {
           showToast("Ошибка сети", true);
         }
