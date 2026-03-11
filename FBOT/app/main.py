@@ -21,7 +21,7 @@ from urllib.parse import parse_qsl
 from datetime import datetime, date, timedelta
 import io
 import qrcode
-from typing import Dict, Any, List, Iterable, Optional
+from typing import Dict, Any, List, Iterable, Optional, Union
 import db
 
 from aiohttp import web
@@ -63,6 +63,7 @@ WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip()
 STATE_FILE = os.getenv("STATE_FILE", "./data/state.json")
 SESSIONS_DIR = os.getenv("SESSIONS_DIR", "./.sessions")
 BOT_SESSION = os.getenv("BOT_SESSION_NAME", "bot.session")
+AUDIT_FILE = os.getenv("AUDIT_FILE", "./data/audit.jsonl")
 AVATARS_DIR = os.getenv("AVATARS_DIR", "./frontend/avatars")
 
 MIN_DELAY = max(0, int(os.getenv("MIN_DELAY", "1")))
@@ -94,9 +95,20 @@ DEFAULT_KEYWORDS = [
     "бюджет", "сроки", "тз", "оплата", "hiring", "need"
 ]
 DEFAULT_NEGATIVE_WORDS = [
-    "ищу работу", "ищу заказы", "возьму заказ", "сделаю дешево", "портфолио", 
-    "резюме", "ищу подработку", "ищу вакансию", "ищу проект"
+    "ищу работу", "ищу заказы", "возьму заказ", "готов выполнить",
+    "выполню", "сделаю дешево", "портфолио", "резюме",
+    "ищу подработку", "ищу вакансию", "ищу проект", "ищу стажировку",
+    "готов работать", "ищу клиентов",
+    "looking for job", "looking for work", "available for work",
+    "hire me", "seeking gigs", "open to work", "need clients", "resume", "cv",
 ]
+
+DEFAULT_SYSTEM_PROMPT = (
+    "You are a strict binary classifier. Answer only YES or NO.\n"
+    "Decide if the message is a CLIENT REQUEST looking to hire a motion/animation specialist "
+    "(2D/3D, motion graphics, video), as opposed to a person advertising themselves or looking for a job. "
+    "Input language may be RU/KZ/EN."
+)
 
 OPENAI_ENABLED = (
     os.getenv("OPENAI_ENABLED", "1").lower() in {"1", "true", "yes"}
@@ -113,15 +125,9 @@ logging.basicConfig(
 )
 log = logging.getLogger("motionbot")
 
-# ================== Состояние/Аудит ==================
-state_lock = asyncio.Lock()
-
 # --- Глобальный стейт ---
-STATE_FILE = "./data/state.json"
-STATE_LOCK_FILE = "./data/state.lock"
+STATE_LOCK_FILE = f"{STATE_FILE}.lock"
 state_lock = asyncio.Lock()
-
-AUDIT_FILE = "./data/audit.jsonl"
 STATE_CACHE: Optional[Dict[str, Any]] = None
 
 def ensure_dirs():
@@ -176,6 +182,42 @@ auth_sessions: Dict[int, Dict[str, Any]] = {}
 # Активные процессы массовой рассылки для предотвращения дублей
 active_mailings = set()
 
+# Кэш для ускорения работы watcher при большой нагрузке (300+ юзеров)
+USER_CACHE: Dict[str, Any] = {}
+CHANNELS_CACHE: Dict[str, List[Dict[str, Any]]] = {}
+
+async def get_cached_user(uid_str: str):
+    if uid_str in USER_CACHE:
+        return USER_CACHE[uid_str]
+    u_data = await db.get_user(uid_str)
+    if u_data:
+        USER_CACHE[uid_str] = u_data
+    return u_data
+
+async def get_cached_channels(uid_str: str):
+    if uid_str in CHANNELS_CACHE:
+        return CHANNELS_CACHE[uid_str]
+    channels = await db.get_channels(uid_str)
+    CHANNELS_CACHE[uid_str] = channels
+    return channels
+
+def invalidate_cache(uid_str: str):
+    USER_CACHE.pop(uid_str, None)
+    CHANNELS_CACHE.pop(uid_str, None)
+
+def is_subscribed(u_data: Dict[str, Any]) -> bool:
+    """Проверяет наличие активной подписки пользователя."""
+    if not u_data:
+        return False
+    expires_at = u_data.get("expires_at")
+    if not expires_at:
+        return False
+    now = datetime.now(db.TZ_KZ)
+    # Если в базе дата без часового пояса, приводим 'now' к такому же виду для сравнения
+    if expires_at.tzinfo is None:
+        return expires_at > now.replace(tzinfo=None)
+    return expires_at > now.astimezone(expires_at.tzinfo)
+
 if OPENAI_ENABLED:
     try:
         openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -189,16 +231,11 @@ REQ_VERBS = re.compile(
     re.I,
 )
 
-async def openai_gate(text: str) -> bool:
+async def openai_gate(text: str, user_prompt: str = None) -> bool:
     if not OPENAI_ENABLED:
         return False
     try:
-        system = (
-            "You are a strict binary classifier. Answer only YES or NO.\n"
-            "Decide if the message is a CLIENT REQUEST looking to hire a motion/animation specialist "
-            "(2D/3D, motion graphics, video), as opposed to a person advertising themselves or looking for a job. "
-            "Input language may be RU/KZ/EN."
-        )
+        system = user_prompt.strip() if user_prompt else DEFAULT_SYSTEM_PROMPT
         resp = await openai_client.chat.completions.create(
             model=OPENAI_MODEL,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": f"Message:\n{text}"}],
@@ -294,22 +331,13 @@ def make_watcher_handler(uid_str: str):
         try:
             # key используется для логов и аудит записей (как в /status или в выводе)
             key = uid_str 
-            u_data = await db.get_user(uid_str)
+            u_data = await get_cached_user(uid_str)
             if not u_data or not u_data.get("enabled"):
                 return
             
-            # Check expiry
-            expires_at = u_data.get("expires_at")
-            if expires_at:
-                now = datetime.now(db.TZ_KZ)
-                # Если в базе дата без часового пояса, приводим 'now' к такому же виду для сравнения
-                if expires_at.tzinfo is None:
-                    now = now.replace(tzinfo=None)
-                else:
-                    now = now.astimezone(expires_at.tzinfo)
-                
-                if expires_at < now:
-                    return
+            # Check expiry (Strict: no access if expires_at is None or past)
+            if not is_subscribed(u_data):
+                return
 
             if getattr(event, 'out', False):
                 return  # Игнорируем исходящие
@@ -331,8 +359,21 @@ def make_watcher_handler(uid_str: str):
             chat_title = getattr(chat, "title", "") or str(event.chat_id)
             chat_username = getattr(chat, "username", None)
             
+            # Конструируем ссылку на сообщение
+            msg_id = event.id
+            msg_link = ""
+            if chat_username:
+                msg_link = f"https://t.me/{chat_username}/{msg_id}"
+            else:
+                peer_id = str(event.chat_id)
+                if peer_id.startswith("-100"):
+                    peer_id = peer_id[4:]
+                elif peer_id.startswith("-"):
+                    peer_id = peer_id[1:]
+                msg_link = f"https://t.me/c/{peer_id}/{msg_id}"
+            
             # Фильтрация по каналам
-            user_channels = await db.get_channels(uid_str)
+            user_channels = await get_cached_channels(uid_str)
             if user_channels:
                 current_chat_id = event.chat_id
                 relevant_channel = None
@@ -389,7 +430,8 @@ def make_watcher_handler(uid_str: str):
             else:
                 # Есть ключевик, но нет глагола - отдаем нейросети
                 used_openai = True
-                ai_ok = await openai_gate(text)
+                prompt = u_data.get("system_prompt")
+                ai_ok = await openai_gate(text, user_prompt=prompt)
                 ok = ai_ok
                 reason = "openai_yes" if ai_ok else "openai_no"
 
@@ -413,9 +455,7 @@ def make_watcher_handler(uid_str: str):
                 await asyncio.sleep(delay)
                 try:
                     reply_text = str(u_data.get("reply_text") or DEFAULT_REPLY)
-                    # Media files aren't in DB yet, will implement later if needed or skip for now
-                    # media_files = list((u_data.get("media_files") or [])[:3])
-                    media_files = []
+                    media_files = [] # TODO: support media for auto-replies if needed
                     if media_files:
                         first, rest = media_files[0], media_files[1:]
                         await client.send_file(target, first, caption=reply_text)
@@ -433,9 +473,9 @@ def make_watcher_handler(uid_str: str):
                     today_str = str(today_dt.date())
                     
                     # Fetch fresh data for update
-                    current_u_data = await db.get_user(uid_str)
+                    current_u_data = await get_cached_user(uid_str)
                     if current_u_data:
-                        current_daily_date = current_u_data.get("daily_date", "")
+                        current_daily_date = str(current_u_data.get("daily_date", ""))
                         current_daily_sent = current_u_data.get("daily_sent", 0)
                         
                         if current_daily_date != today_str:
@@ -444,23 +484,17 @@ def make_watcher_handler(uid_str: str):
                         else:
                             await db.update_user_field(uid_str, "daily_sent", current_daily_sent + 1)
                     
+                    invalidate_cache(uid_str)
                     await db.add_crm_contacts(uid_str, [target], source="Авто-сбор")
                     
                     # Уведомляем админов и самого пользователя
                     who = target if isinstance(target, str) else f"id:{target}"
-                    notify_txt = f"✅ Отклик отправлен {who} от имени {u_data.get('phone')} (чат: {chat_title})"
-                    
-                    async def safe_b_send(tid_str, txt):
-                        try:
-                            # Если это Telegram ID (цифры), отправляем через бота
-                            if str(tid_str).replace("-", "").isdigit():
-                                await bot_client.send_message(int(tid_str), txt)
-                        except Exception as e:
-                            log.debug(f"Notification failed for {tid_str}: {e}")
-                    
-                    asyncio.create_task(safe_b_send(uid_str, notify_txt))
-                    for ad_id in ADMIN_IDS:
-                        asyncio.create_task(safe_b_send(ad_id, f"[SaaS] {notify_txt}"))
+                    notify_txt = (
+                        f"✅ Отклик отправлен {who} от имени {u_data.get('phone')}\n"
+                        f"📍 Чат: {chat_title}\n"
+                        f"🔗 Сообщение: {msg_link}"
+                    )
+                    asyncio.create_task(notify_user_and_admins(uid_str, notify_txt))
                         
                 except FloodWaitError as e: send_error = f"FloodWait {e.seconds}s"
                 except (UserPrivacyRestrictedError, UserIsBlockedError): send_error = "privacy/blocked"
@@ -490,15 +524,34 @@ def make_watcher_handler(uid_str: str):
             if u_data.get("tap"):
                 mark = "🟢" if final == "sent" else "🟡" if ok and final != "sent" else "⚪"
                 txt = f"{mark} [{key}] {chat_title}\n▶ {preview(raw, 200)}\ndecision: {final} | target: {target} | err: {send_error}"
-                try:
-                    if str(uid_str).isdigit():
-                        await bot_client.send_message(int(uid_str), txt)
-                except: pass
+                asyncio.create_task(notify_user_and_admins(uid_str, txt, prefix="[Auditing]"))
         
         except Exception as e:
             log.error(f"[Watcher:{uid_str}] Critical watcher error: {e}", exc_info=True)
 
     return watcher
+
+async def notify_user_and_admins(user_id: Union[str, int], text: str, prefix: str = "[SaaS]"):
+    """
+    Отправляет уведомление пользователю и дублирует всем администраторам.
+    """
+    uid_str = str(user_id)
+    # 1. Отправляем пользователю
+    if uid_str.replace("-", "").isdigit():
+        try:
+            await bot_client.send_message(int(uid_str), text)
+        except Exception as e:
+            log.debug(f"Failed to notify user {uid_str}: {e}")
+
+    # 2. Дублируем админам (кроме случая, если админ и есть наш юзер)
+    for ad_id in ADMIN_IDS:
+        if str(ad_id) != uid_str:
+            try:
+                # Плавная отправка админам (Traffic Shaping)
+                await asyncio.sleep(0.1)
+                await bot_client.send_message(int(ad_id), f"{prefix} (User {uid_str}): {text}")
+            except Exception as e:
+                log.debug(f"Failed to notify admin {ad_id}: {e}")
 
 # ================== Команды Бота Управления ==================
 def is_admin(user_id: Any) -> bool:
@@ -547,7 +600,7 @@ async def cmd_start(event):
         )
     
     # Для зарегистрированного пользователя
-    user_data = await db.get_user(uid_str)
+    user_data = await get_cached_user(uid_str)
     if user_data:
         return await event.respond(
             "Привет! Твой юзербот запущен.\n/help - список команд настройки твоего откликера."
@@ -583,7 +636,7 @@ async def cmd_list_users(event):
     txt += "👥 Активные юзеры:\n"
     uids = await db.get_all_uids()
     for uid in uids:
-        udata = await db.get_user(uid)
+        udata = await get_cached_user(uid)
         if udata:
             txt += f"UID: {uid} | Phone: {udata.get('phone')} | ON: {udata.get('enabled')}\n"
     await event.respond(txt)
@@ -610,7 +663,7 @@ async def fsm_handler(event):
 
     # Запрос QR-кода
     if text == "🔐 Войти по QR-коду":
-        user_data = await db.get_user(str(sender_id))
+        user_data = await get_cached_user(str(sender_id))
         if user_data:
             return await event.respond("Твой аккаунт уже авторизован. Введи /help")
 
@@ -658,7 +711,7 @@ async def fsm_handler(event):
             auth_sessions[sender_id] = {"client": client, "qr_msg": msg, "step_2fa": False}
             
             # Ждём сканирования параллельно, чтобы не блокировать бота
-            asyncio.create_task(wait_for_qr_scan(sender_id, qr, st))
+            asyncio.create_task(wait_for_qr_scan(sender_id, qr))
             
         except Exception as e:
             log.error(f"Ошибка генерации QR-кода: {e}")
@@ -686,7 +739,7 @@ async def fsm_handler(event):
 
 
 
-async def wait_for_qr_scan(sender_id: int, qr, st: Dict[str, Any]):
+async def wait_for_qr_scan(sender_id: int, qr):
     auth = auth_sessions.get(sender_id)
     if not auth: return
     client = auth["client"]
@@ -745,13 +798,18 @@ async def finalize_login(user_id: int):
     except Exception as e:
         log.warning(f"Failed to remove temp session: {e}")
     
+    # Preserve existing enabled state if it's a re-login
+    existing_user = await get_cached_user(uid_str)
+    existing_enabled = existing_user.get("enabled", False) if existing_user else False
+
     user_db_data = {
         "phone": auth["phone"],
         "session_string": session_str,
-        "enabled": False,
+        "enabled": existing_enabled,
         "reply_text": DEFAULT_REPLY,
         "keywords": DEFAULT_KEYWORDS.copy(),
         "negative_words": DEFAULT_NEGATIVE_WORDS.copy(),
+        "system_prompt": DEFAULT_SYSTEM_PROMPT,
         "daily_sent": 0,
         "daily_date": datetime.now(db.TZ_KZ).date(),
         "mail_limit": 50
@@ -781,7 +839,7 @@ async def finalize_login(user_id: int):
 @bot_client.on(events.NewMessage(pattern=r"^/help$"))
 async def cmd_user_help(event):
     uid_str = str(event.sender_id)
-    user_data = await db.get_user(uid_str)
+    user_data = await get_cached_user(uid_str)
     if not user_data: return
     txt = (
         "Команды твоего юзербота:\n"
@@ -808,11 +866,11 @@ async def cmd_user_help(event):
 @bot_client.on(events.NewMessage(pattern=r"^/status$"))
 async def cmd_user_status(event):
     uid_str = str(event.sender_id)
-    user_data = await db.get_user(uid_str)
+    user_data = await get_cached_user(uid_str)
     if not user_data: return
     
     enabled = "✅ ВКЛЮЧЕН" if user_data.get("enabled") else "⏸️ ВЫКЛЮЧЕН"
-    channels = await db.get_channels(uid_str)
+    channels = await get_cached_channels(uid_str)
     ch_count = len(channels)
     kw_count = len(user_data.get("keywords", []))
     
@@ -820,7 +878,7 @@ async def cmd_user_status(event):
     if expires_at:
         exp_str = expires_at.strftime("%d.%m.%Y %H:%M")
     else:
-        exp_str = "Безлимитный"
+        exp_str = "Доступ не оплачен ❌"
 
     txt = (
         f"📊 **Твой статус:**\n"
@@ -836,43 +894,112 @@ async def cmd_user_status(event):
 @bot_client.on(events.NewMessage(pattern=r"^/on$|^/off$"))
 async def cmd_user_toggle(event):
     uid_str = str(event.sender_id)
-    user_data = await db.get_user(uid_str)
+    user_data = await get_cached_user(uid_str)
     if not user_data: return
     enable = event.pattern_match.group(0) == "/on"
+
+    if enable and not is_subscribed(user_data):
+        return await event.respond("🚫 Доступ ограничен. Пожалуйста, оплатите подписку для запуска воркера.")
+
     await db.update_user_field(uid_str, "enabled", enable)
+    invalidate_cache(uid_str)
     await event.respond(f"Рассылка {'ВКЛЮЧЕНА ✅' if enable else 'ВЫКЛЮЧЕНА ⏸️'}")
 
 @bot_client.on(events.NewMessage(pattern=r"^/set_reply\s+([\s\S]+)$"))
 async def cmd_user_set_reply(event):
     uid_str = str(event.sender_id)
-    user_data = await db.get_user(uid_str)
+    user_data = await get_cached_user(uid_str)
     if not user_data: return
     txt = event.pattern_match.group(1)
     await db.update_user_field(uid_str, "reply_text", txt)
+    invalidate_cache(uid_str)
     await event.respond("Ваш шаблон отклика сохранен ✅")
 
 @bot_client.on(events.NewMessage(pattern=r"^/get_reply$"))
 async def cmd_user_get_reply(event):
     uid_str = str(event.sender_id)
-    user_data = await db.get_user(uid_str)
+    user_data = await get_cached_user(uid_str)
     if not user_data: return
     await event.respond(f"Твой шаблон:\n\n{user_data.get('reply_text')}")
 
 @bot_client.on(events.NewMessage(pattern=r"^/add_kw\s+([\s\S]+)$"))
 async def cmd_user_add_kw(event):
     uid_str = str(event.sender_id)
-    user_data = await db.get_user(uid_str)
+    user_data = await get_cached_user(uid_str)
     if not user_data: return
     terms = _parse_terms(event.pattern_match.group(1))
     cur_kws = list(user_data.get("keywords", []))
     new_kws = _dedup_keep_order(cur_kws + terms)
     await db.update_user_field(uid_str, "keywords", new_kws)
+    invalidate_cache(uid_str)
     await event.respond(f"Ключи добавлены. Всего: {len(new_kws)}")
+
+@bot_client.on(events.NewMessage(pattern=r"^/list_kw$"))
+async def cmd_user_list_kw(event):
+    uid_str = str(event.sender_id)
+    user_data = await get_cached_user(uid_str)
+    if not user_data: return
+    kws = list(user_data.get("keywords", []))
+    if not kws:
+        return await event.respond("У вас нет ключевых слов.")
+    await event.respond("📋 Ваши ключевые слова:\n" + "; ".join(kws))
+
+@bot_client.on(events.NewMessage(pattern=r"^/add_bad_kw\s+([\s\S]+)$"))
+async def cmd_user_add_bad_kw(event):
+    uid_str = str(event.sender_id)
+    user_data = await get_cached_user(uid_str)
+    if not user_data: return
+    terms = _parse_terms(event.pattern_match.group(1))
+    cur_bad = list(user_data.get("negative_words", []))
+    new_bad = _dedup_keep_order(cur_bad + terms)
+    await db.update_user_field(uid_str, "negative_words", new_bad)
+    invalidate_cache(uid_str)
+    await event.respond(f"Минус-слова добавлены. Всего: {len(new_bad)}")
+
+@bot_client.on(events.NewMessage(pattern=r"^/list_bad_kw$"))
+async def cmd_user_list_bad_kw(event):
+    uid_str = str(event.sender_id)
+    user_data = await get_cached_user(uid_str)
+    if not user_data: return
+    bad = list(user_data.get("negative_words", []))
+    if not bad:
+        return await event.respond("У вас нет минус-слов.")
+    await event.respond("📋 Ваши минус-слова:\n" + "; ".join(bad))
+
+@bot_client.on(events.NewMessage(pattern=r"^/del_kw\s+([\s\S]+)$"))
+async def cmd_user_del_kw(event):
+    uid_str = str(event.sender_id)
+    user_data = await get_cached_user(uid_str)
+    if not user_data: return
+    term = event.pattern_match.group(1).strip()
+    cur_kw = list(user_data.get("keywords", []))
+    if term in cur_kw:
+        cur_kw.remove(term)
+        await db.update_user_field(uid_str, "keywords", cur_kw)
+        invalidate_cache(uid_str)
+        await event.respond(f"Слово '{term}' удалено ✅")
+    else:
+        await event.respond(f"Слово '{term}' не найдено в списке.")
+
+@bot_client.on(events.NewMessage(pattern=r"^/del_bad_kw\s+([\s\S]+)$"))
+async def cmd_user_del_bad_kw(event):
+    uid_str = str(event.sender_id)
+    user_data = await get_cached_user(uid_str)
+    if not user_data: return
+    term = event.pattern_match.group(1).strip()
+    cur_bad = list(user_data.get("negative_words", []))
+    if term in cur_bad:
+        cur_bad.remove(term)
+        await db.update_user_field(uid_str, "negative_words", cur_bad)
+        invalidate_cache(uid_str)
+        await event.respond(f"Минус-слово '{term}' удалено ✅")
+    else:
+        await event.respond(f"Минус-слово '{term}' не найдено в списке.")
 
 @bot_client.on(events.NewMessage(pattern=r"^/add_channel\s+(.+)$"))
 async def cmd_user_add_channel(event):
     uid_str = str(event.sender_id)
-    user_data = await db.get_user(uid_str)
+    user_data = await get_cached_user(uid_str)
     if not user_data: return
     
     link = event.pattern_match.group(1).strip()
@@ -884,13 +1011,14 @@ async def cmd_user_add_channel(event):
     cid = await ensure_join(client, link)
     if cid:
         await db.add_channel(uid_str, link)
+        invalidate_cache(uid_str)
         await event.respond("Готово! Канал добавлен и юзербот на него подписался ✅")
     else:
         await event.respond("Не удалось подписаться на этот канал 🚫")
 @bot_client.on(events.NewMessage(pattern=r"^/add_group\s+(.+)$"))
 async def cmd_user_add_group(event):
     uid_str = str(event.sender_id)
-    user_data = await db.get_user(uid_str)
+    user_data = await get_cached_user(uid_str)
     if not user_data: return
     
     link = event.pattern_match.group(1).strip()
@@ -902,6 +1030,7 @@ async def cmd_user_add_group(event):
     cid = await ensure_join(client, link)
     if cid:
         await db.add_channel(uid_str, link, ctype="group")
+        invalidate_cache(uid_str)
         await event.respond("Готово! Группа добавлена ✅")
     else:
         await event.respond("Не удалось подписаться на эту группу 🚫")
@@ -909,9 +1038,9 @@ async def cmd_user_add_group(event):
 @bot_client.on(events.NewMessage(pattern=r"^/list_channels$"))
 async def cmd_user_list_channels(event):
     uid_str = str(event.sender_id)
-    user_data = await db.get_user(uid_str)
+    user_data = await get_cached_user(uid_str)
     if not user_data: return
-    channels = await db.get_channels(uid_str)
+    channels = await get_cached_channels(uid_str)
     if not channels:
         return await event.respond("У вас нет добавленных каналов.")
     await event.respond("📋 Ваши каналы:\n" + "\n".join(channels))
@@ -920,9 +1049,12 @@ async def cmd_user_list_channels(event):
 @bot_client.on(events.NewMessage(pattern=r"^/collect_dialogs$"))
 async def cmd_user_collect_dialogs(event):
     uid_str = str(event.sender_id)
-    user_data = await db.get_user(uid_str)
+    user_data = await get_cached_user(uid_str)
     if not user_data: return
     
+    if not is_subscribed(user_data):
+        return await event.respond("🚫 Доступ ограничен. Сбор диалогов доступен только по подписке.")
+
     client = user_clients.get(uid_str)
     if not client:
         return await event.respond("Ваш юзербот сейчас оффлайн. Сначала подключите его через /start или WebApp.")
@@ -953,7 +1085,7 @@ async def cmd_user_collect_dialogs(event):
 @bot_client.on(events.NewMessage(pattern=r"^/add_mail\s+(.+)$"))
 async def cmd_user_add_mail(event):
     uid_str = str(event.sender_id)
-    user_data = await db.get_user(uid_str)
+    user_data = await get_cached_user(uid_str)
     if not user_data: return
     target = event.pattern_match.group(1).strip()
     await db.add_crm_contacts(uid_str, [target], source="Авто-сбор")
@@ -963,7 +1095,7 @@ async def cmd_user_add_mail(event):
 @bot_client.on(events.NewMessage(pattern=r"^/list_mail$"))
 async def cmd_user_list_mail(event):
     uid_str = str(event.sender_id)
-    user_data = await db.get_user(uid_str)
+    user_data = await get_cached_user(uid_str)
     if not user_data: return
     count = await db.get_crm_count(uid_str)
     limit = user_data.get("mail_limit", 50)
@@ -972,16 +1104,17 @@ async def cmd_user_list_mail(event):
 @bot_client.on(events.NewMessage(pattern=r"^/set_mail_limit\s+(\d+)$"))
 async def cmd_user_set_mail_limit(event):
     uid_str = str(event.sender_id)
-    user_data = await db.get_user(uid_str)
+    user_data = await get_cached_user(uid_str)
     if not user_data: return
     limit = int(event.pattern_match.group(1))
     await db.update_user_field(uid_str, "mail_limit", limit)
+    invalidate_cache(uid_str)
     await event.respond(f"✅ Лимит рассылки за один запуск установлен на: {limit}")
 
 @bot_client.on(events.NewMessage(pattern=r"^/run_mail\s+([\s\S]+)$"))
 async def cmd_user_run_mail(event):
     uid_str = str(event.sender_id)
-    user_data = await db.get_user(uid_str)
+    user_data = await get_cached_user(uid_str)
     if not user_data: return
     
     text = event.pattern_match.group(1)
@@ -996,6 +1129,9 @@ async def cmd_user_run_mail(event):
     client = user_clients.get(uid_str)
     if not client:
         return await event.respond("❌ Твой юзербот сейчас оффлайн.")
+
+    if not is_subscribed(user_data):
+        return await event.respond("🚫 Доступ ограничен. Рассылка доступна только по подписке.")
 
     if uid_str in active_mailings:
         return await event.respond("❌ У вас уже запущена рассылка! Дождитесь ее завершения.")
@@ -1021,7 +1157,7 @@ async def cmd_user_run_mail(event):
                 should_move = False
             except PeerFloodError:
                 log.error(f"PeerFloodError: Аккаунт {uid_str} получил спам-мут!")
-                await event.respond("⛔️ **КРИТИЧЕСКАЯ ОШИБКА:**\nTelegram выдал вам временный спам-мут (PeerFloodError). Вы не можете писать первыми неконтактам.\nРассылка экстренно остановлена для защиты аккаунта!")
+                await notify_user_and_admins(uid_str, "⛔️ **КРИТИЧЕСКАЯ ОШИБКА:**\nTelegram выдал вам временный спам-мут (PeerFloodError). Вы не можете писать первыми неконтактам.\nРассылка экстренно остановлена для защиты аккаунта!")
                 break
             except (ConnectionError, asyncio.TimeoutError):
                 log.warning(f"Connection/Timeout Error for {uid_str}. Sleeping 15s...")
@@ -1046,7 +1182,7 @@ async def cmd_user_run_mail(event):
                 
             await asyncio.sleep(random.uniform(2, 5)) # Антибан задержка
         
-        await event.respond(f"✅ Рассылка завершена!\nУспешно: {sent_count}\nОшибок: {err_count}\nУдалено (мертвых/закрытых): {deleted_count}\n\n*Отправленные контакты перенесены в конец очереди.*")
+        await notify_user_and_admins(uid_str, f"✅ Рассылка завершена!\nУспешно: {sent_count}\nОшибок: {err_count}\nУдалено (мертвых/закрытых): {deleted_count}\n\n*Отправленные контакты перенесены в конец очереди.*")
     finally:
         active_mailings.discard(uid_str)
 
@@ -1058,7 +1194,7 @@ async def start_all_clients():
     
     for uid_str in uids:
         log.info(f"Attempting to start client for UID: {uid_str}")
-        data = await db.get_user(uid_str)
+        data = await get_cached_user(uid_str)
         if not data:
             log.warning(f"No data found for UID {uid_str} in DB.")
             continue
@@ -1091,10 +1227,13 @@ async def start_all_clients():
                     if me.last_name: name += f" {me.last_name}"
                     await db.update_user_field(uid_str, "name", name)
                     await db.update_user_field(uid_str, "username", me.username)
+                    invalidate_cache(uid_str)
                 except Exception as me_err:
                     log.error(f"Failed to get_me for {uid_str}: {me_err}")
                 
                 log.info(f"Successfully started client for UID {uid_str}")
+                # Плавный запуск (Staggered Startup): 0.5 сек пауза между юзерами
+                await asyncio.sleep(0.5)
             except Exception as e:
                 log.error(f"Failed to start client {uid_str}: {e}")
         else:
@@ -1109,12 +1248,19 @@ async def daily_report_task():
             today_str = now.strftime("%Y-%m-%d")
             uids = await db.get_all_uids()
             for uid_str in uids:
-                udata = await db.get_user(uid_str)
-                if udata and udata.get("daily_date") == today_str and udata.get("daily_sent", 0) > 0:
+                udata = await get_cached_user(uid_str)
+                if not udata: continue
+                
+                # Исправляем сравнение даты: udata['daily_date'] может быть объектом date
+                user_date = str(udata.get("daily_date", ""))
+                if user_date == today_str and udata.get("daily_sent", 0) > 0:
                     count = udata["daily_sent"]
                     if str(uid_str).isdigit():
                         try:
-                            await bot_client.send_message(int(uid_str), txt)
+                            txt = f"📊 Вечерний отчет по откликам за сегодня: {count}"
+                            await notify_user_and_admins(uid_str, txt, prefix="[Report]")
+                            # Плавная рассылка отчетов: 0.3 сек между пользователями
+                            await asyncio.sleep(0.3)
                         except: pass
             await asyncio.sleep(60) # Спим 1 минуту, чтобы не отправить дважды в 21:00
         else:
@@ -1191,7 +1337,7 @@ async def api_qr_login(request):
             if not validate_webapp_data(init_data, BOT_TOKEN):
                 return web.json_response({"error": "Unauthorized"}, status=401)
             
-            user_data = await db.get_user(str_sender_id)
+            user_data = await get_cached_user(str_sender_id)
             if user_data and user_data.get("session_string"):
                 return web.json_response({"error": "Already registered"})
 
@@ -1286,15 +1432,20 @@ async def finalize_webapp_login(w_session):
     
     # Подготовка данных для БД
     user_phone = w_session.get("phone") or str(uid)
+    # Preserve existing enabled state if it's a re-login
+    existing_user = await get_cached_user(uid_str)
+    existing_enabled = existing_user.get("enabled", False) if existing_user else False
+
     user_db_data = {
         "phone": user_phone,
         "session_string": session_str,
         "name": w_session.get("name"),
         "username": w_session.get("username"),
-        "enabled": False,
+        "enabled": existing_enabled,
         "reply_text": DEFAULT_REPLY,
         "keywords": DEFAULT_KEYWORDS.copy(),
         "negative_words": DEFAULT_NEGATIVE_WORDS.copy(),
+        "system_prompt": DEFAULT_SYSTEM_PROMPT,
         "daily_sent": 0,
         "daily_date": datetime.now(db.TZ_KZ).date(),
         "mail_limit": 50
@@ -1416,6 +1567,24 @@ async def api_2fa_login(request):
             return web.json_response({"error": err_msg}, status=400)
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
+async def maintenance_task():
+    """Фоновая задача для обслуживания системы: ротация логов аудита и т.д."""
+    while True:
+        try:
+            # Раз в час
+            await asyncio.sleep(3600)
+            
+            # 1. Ротация файла аудита (ограничиваем 20МБ)
+            if os.path.exists(AUDIT_FILE) and os.path.getsize(AUDIT_FILE) > 20 * 1024 * 1024:
+                log.info("Rotating audit log file...")
+                backup_path = f"{AUDIT_FILE}.old"
+                if os.path.exists(backup_path):
+                    os.remove(backup_path) # Удаляем совсем старый
+                os.rename(AUDIT_FILE, backup_path)
+                # Новый файл создастся автоматически при следующей записи
+                
+        except Exception as e:
+            log.error(f"Error in maintenance_task: {e}")
 
 async def webapp_qr_cleanup_task():
     """Фоновая задача для очистки старых QR/2FA сессий (TTL 5 минут)."""
@@ -1445,7 +1614,7 @@ async def api_get_state(request):
     if not uid_str:
         return web.json_response({"error": "Unauthorized"}, status=401)
 
-    udata = await db.get_user(uid_str)
+    udata = await get_cached_user(uid_str)
     if not udata or not udata.get("session_string"): 
         return web.json_response({"error": "User not registered", "registered": False}, status=200)
     
@@ -1472,13 +1641,14 @@ async def api_get_state(request):
     
     # Срок доступа
     if is_admin_flag:
-        resp["expires_at"] = "Безлимит"
-    else:
-        exp = udata.get("expires_at")
-        if isinstance(exp, (datetime, date)):
-            resp["expires_at"] = exp.strftime("%Y-%m-%d %H:%M") if hasattr(exp, 'hour') else exp.strftime("%Y-%m-%d")
-        else:
+        if is_admin(uid_str):
             resp["expires_at"] = "Безлимит"
+        else:
+            exp = udata.get("expires_at")
+            if isinstance(exp, (datetime, date)):
+                resp["expires_at"] = exp.strftime("%d.%m.%Y %H:%M")
+            else:
+                resp["expires_at"] = "Доступ не оплачен"
         
     resp["expired"] = expired
     
@@ -1497,18 +1667,24 @@ async def api_update_state(request):
 
     try:
         data = await request.json()
-        user_data = await db.get_user(uid_str)
+        user_data = await get_cached_user(uid_str)
         if not user_data: return web.json_response({"error": "Not registered"}, status=404)
         
         if "enabled" in data:
-            await db.update_user_field(uid_str, "enabled", bool(data["enabled"]))
+            enable_val = bool(data["enabled"])
+            if enable_val and not is_subscribed(user_data):
+                return web.json_response({"error": "Subscription required to enable worker"}, status=403)
+            await db.update_user_field(uid_str, "enabled", enable_val)
         if "reply_text" in data:
             await db.update_user_field(uid_str, "reply_text", str(data["reply_text"]))
         if "keywords" in data:
             await db.update_user_field(uid_str, "keywords", _dedup_keep_order(data["keywords"]))
         if "mail_limit" in data:
             await db.update_user_field(uid_str, "mail_limit", int(data["mail_limit"]))
+        if "system_prompt" in data:
+            await db.update_user_field(uid_str, "system_prompt", str(data["system_prompt"]))
             
+        invalidate_cache(uid_str)
         return web.json_response({"status": "ok"})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -1539,7 +1715,7 @@ async def api_get_profile(request):
     else:
         uid_str = auth_uid
     
-    udata = await db.get_user(uid_str)
+    udata = await get_cached_user(uid_str)
     if not udata or not udata.get("session_string"): 
         return web.json_response({"error": "User not registered", "registered": False}, status=200)
 
@@ -1586,6 +1762,7 @@ async def api_get_profile(request):
         if updated:
             await db.update_user_field(uid_str, "name", name)
             await db.update_user_field(uid_str, "username", username)
+            invalidate_cache(uid_str)
             log.info(f"Updated profile for {uid_str}: {name}")
 
     crm_count = await db.get_crm_count(uid_str)
@@ -1611,7 +1788,7 @@ async def api_crm_list(request):
     if not uid_str:
         return web.json_response({"error": "Unauthorized"}, status=401)
 
-    udata = await db.get_user(uid_str)
+    udata = await get_cached_user(uid_str)
     if not udata or not udata.get("session_string"): 
         return web.json_response({"error": "User not registered", "registered": False}, status=200)
 
@@ -1639,7 +1816,7 @@ async def api_crm_add(request):
         if not contacts_to_add:
             return web.json_response({"error": "No contacts provided"}, status=400)
 
-        user_data = await db.get_user(uid_str)
+        user_data = await get_cached_user(uid_str)
         if not user_data: return web.json_response({"error": "Not registered"}, status=404)
         
         added = await db.add_crm_contacts(uid_str, contacts_to_add, source="Ручной ввод")
@@ -1760,7 +1937,7 @@ async def api_get_audit(request):
         uid_str = auth_uid
         
     try:
-        udata = await db.get_user(uid_str)
+        udata = await get_cached_user(uid_str)
         if not udata: 
             return web.json_response({"error": "User not registered"}, status=200)
             
@@ -1793,7 +1970,7 @@ async def api_crm_delete(request):
         if not contact:
             return web.json_response({"error": "No contact provided"}, status=400)
             
-        user_data = await db.get_user(uid_str)
+        user_data = await get_cached_user(uid_str)
         if not user_data: return web.json_response({"error": "Not registered"}, status=404)
 
         await db.delete_crm_contact(uid_str, contact)
@@ -1820,9 +1997,9 @@ async def api_admin_users(request):
             else:
                 exp = u.get('expires_at')
                 if isinstance(exp, (datetime, date)):
-                    u['expires_at'] = exp.strftime("%Y-%m-%d %H:%M") if hasattr(exp, 'hour') else exp.strftime("%Y-%m-%d")
+                    u['expires_at'] = exp.strftime("%d.%m.%Y %H:%M")
                 else:
-                    u['expires_at'] = "Безлимит"
+                    u['expires_at'] = "Доступ не оплачен"
             
             # Принудительно конвертируем все даты в строки для JSON
             for k in list(u.keys()):
@@ -1847,7 +2024,13 @@ async def api_admin_update_access(request):
         new_expiry = await db.update_user_access(phone, int(months))
         if not new_expiry:
             return web.json_response({"error": "User not found or database pool error"}, status=404)
-        return web.json_response({"status": "ok", "new_expiry": new_expiry.strftime("%Y-%m-%d %H:%M")})
+        
+        # Инвалидируем кэш для ВСЕХ юзеров с этим UID (так как поиск по телефону)
+        user_by_ph = await db.get_user_by_phone(phone)
+        if user_by_ph and user_by_ph.get("uid"):
+            invalidate_cache(user_by_ph["uid"])
+
+        return web.json_response({"status": "ok", "new_expiry": new_expiry.strftime("%d.%m.%Y %H:%M")})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
@@ -1924,6 +2107,8 @@ async def api_collect_dialogs(request):
                     if await db.add_channel(uid_str, l, ctype="group"):
                         added += 1
                 
+            if added > 0:
+                invalidate_cache(uid_str)
             return web.json_response({"status": "ok", "added": added})
             
         return web.json_response({"error": "Invalid type"}, status=400)
@@ -1939,6 +2124,7 @@ async def api_channels_list(request):
     try:
         q = request.query.get("q", "").strip()
         ctype = request.query.get("type", "").strip() or None
+        # Для списка каналов в API всё же лучше ходить в базу, так как там есть поиск/фильтры по типу
         channels = await db.get_channels(uid_str, query=q, ctype=ctype)
         return web.json_response({"channels": channels})
     except Exception as e:
@@ -1970,6 +2156,9 @@ async def api_channels_add(request):
             cid = await ensure_join(client, link)
             await db.add_channel(uid_str, link, channel_id=cid, ctype=ctype)
             added_count += 1
+        
+        if added_count > 0:
+            invalidate_cache(uid_str)
                 
         return web.json_response({"status": "ok", "added": added_count})
     except Exception as e:
@@ -1987,6 +2176,7 @@ async def api_channels_delete(request):
             return web.json_response({"error": "No channel provided"}, status=400)
             
         await db.remove_channel(uid_str, link)
+        invalidate_cache(uid_str)
         return web.json_response({"status": "ok"})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -2009,6 +2199,7 @@ async def api_channels_toggle(request):
         else:
             return web.json_response({"error": "Missing link or all flag"}, status=400)
 
+        invalidate_cache(uid_str)
         return web.json_response({"status": "ok"})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -2024,7 +2215,7 @@ async def api_run_mail(request):
         text = str(data.get("text"))
         provided_targets = data.get("targets") # Optional list of contacts
         
-        udata = await db.get_user(uid_str)
+        udata = await get_cached_user(uid_str)
         if not udata: return web.json_response({"error": "Not registered"}, status=404)
         
         if isinstance(provided_targets, list) and len(provided_targets) > 0:
@@ -2041,6 +2232,9 @@ async def api_run_mail(request):
             
         client = user_clients.get(uid_str)
         if not client: return web.json_response({"error": "User client offline"}, status=400)
+            
+        if not is_subscribed(udata):
+            return web.json_response({"error": "Subscription required to run mailing"}, status=403)
             
         if uid_str in active_mailings:
             return web.json_response({"error": "Рассылка уже запущена! Дождитесь окончания."}, status=400)
@@ -2062,10 +2256,7 @@ async def api_run_mail(request):
                         should_move = False
                     except PeerFloodError:
                         log.error(f"PeerFloodError (Web API): Аккаунт {uid_str} получил спам-мут!")
-                        if str(uid_str).isdigit():
-                            try:
-                                await bot_client.send_message(int(uid_str), "⛔️ **Web-Рассылка остановлена!**\nTelegram выдал вам спам-мут (PeerFloodError). Вы временно не можете писать неконтактам.")
-                            except: pass
+                        await notify_user_and_admins(uid_str, "⛔️ **Web-Рассылка остановлена!**\nTelegram выдал вам спам-мут (PeerFloodError). Вы временно не можете писать неконтактам.")
                         break
                     except (ConnectionError, asyncio.TimeoutError):
                         log.warning(f"Connection/Timeout Error for {uid_str} in Web API. Sleeping 15s...")
@@ -2087,10 +2278,9 @@ async def api_run_mail(request):
                         await db.move_to_end(uid_str, tgt)
                         
                     await asyncio.sleep(random.uniform(2, 5))
-                    if str(uid_str).isdigit():
-                        try:
-                            await bot_client.send_message(int(uid_str), f"✅ Web-рассылка завершена!\nУспех: {s}\nОшибок: {e}\nУдалено мертвых: {deleted}")
-                        except: pass
+
+                # Уведомление об окончании рассылки (вне цикла!)
+                await notify_user_and_admins(uid_str, f"✅ Web-рассылка завершена!\nУспех: {s}\nОшибок: {e}\nУдалено мертвых: {deleted}")
             finally:
                 active_mailings.discard(uid_str)
         
@@ -2120,6 +2310,7 @@ async def api_logout(request):
                 pass
         # Сбрасываем session_string в БД
         await db.clear_user_session(uid_str)
+        invalidate_cache(uid_str)
         log.info(f"User {uid_str} logged out (session cleared)")
         return web.json_response({"status": "ok"})
     except Exception as e:
@@ -2145,9 +2336,33 @@ async def api_account_delete(request):
         if not deleted:
             return web.json_response({"error": "Пользователь не найден"}, status=404)
         log.info(f"User {uid_str} account DELETED")
+        invalidate_cache(uid_str)
         return web.json_response({"status": "ok"})
     except Exception as e:
         log.error(f"Delete account error for {uid_str}: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+@routes.post("/api/admin/revoke_access")
+async def api_admin_revoke_access(request):
+    """Полное аннулирование доступа пользователю."""
+    uid_str = await get_auth_user_id(request)
+    if not uid_str or not is_admin(uid_str):
+        return web.json_response({"error": "Forbidden"}, status=403)
+    try:
+        data = await request.json()
+        phone = data.get("phone")
+        if not phone:
+            return web.json_response({"error": "Missing phone"}, status=400)
+            
+        async with db.pool.acquire() as conn:
+            await conn.execute("UPDATE users SET expires_at = NULL WHERE phone = $1", phone)
+        
+        user_by_ph = await db.get_user_by_phone(phone)
+        if user_by_ph and user_by_ph.get("uid"):
+            invalidate_cache(user_by_ph["uid"])
+            
+        return web.json_response({"status": "ok"})
+    except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
 async def init_web_server():
@@ -2207,6 +2422,7 @@ async def main():
     
     asyncio.create_task(daily_report_task())
     asyncio.create_task(webapp_qr_cleanup_task())
+    asyncio.create_task(maintenance_task())
     asyncio.create_task(init_web_server())
     
     log.info("System fully operational.")

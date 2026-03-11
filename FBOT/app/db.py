@@ -125,6 +125,7 @@ async def init_db():
             ("users", "daily_sent", "INT DEFAULT 0"),
             ("users", "daily_date", "DATE"),
             ("users", "expires_at", "TIMESTAMP WITH TIME ZONE"),
+            ("users", "system_prompt", "TEXT"),
             
             # Таблица crm_contacts (доп. поля)
             ("crm_contacts", "created_at", "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP"),
@@ -234,16 +235,16 @@ async def upsert_user(uid: str, data: Dict[str, Any]):
     
     async with pool.acquire() as conn:
         await conn.execute("""
-            INSERT INTO users (uid, phone, session_string, name, username, enabled, reply_text, keywords, negative_words, mail_limit, daily_sent, daily_date)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            INSERT INTO users (uid, phone, session_string, name, username, enabled, reply_text, keywords, negative_words, mail_limit, daily_sent, daily_date, system_prompt)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             ON CONFLICT (phone) DO UPDATE SET
             uid=EXCLUDED.uid, session_string=EXCLUDED.session_string, name=EXCLUDED.name, username=EXCLUDED.username, enabled=EXCLUDED.enabled,
             reply_text=EXCLUDED.reply_text, keywords=EXCLUDED.keywords, negative_words=EXCLUDED.negative_words,
-            mail_limit=EXCLUDED.mail_limit, daily_sent=EXCLUDED.daily_sent, daily_date=EXCLUDED.daily_date
+            mail_limit=EXCLUDED.mail_limit, daily_sent=EXCLUDED.daily_sent, daily_date=EXCLUDED.daily_date, system_prompt=EXCLUDED.system_prompt
         """, 
             uid, phone, data.get("session_string"), data.get("name"), data.get("username"),
             data.get("enabled", False), data.get("reply_text"), kw, neg,
-            data.get("mail_limit", 50), data.get("daily_sent", 0), data.get("daily_date")
+            data.get("mail_limit", 50), data.get("daily_sent", 0), data.get("daily_date"), data.get("system_prompt")
         )
 
 async def get_all_uids() -> List[str]:
@@ -265,7 +266,7 @@ async def update_user_field(uid: str, field: str, value: Any):
     
     async with pool.acquire() as conn:
         # Для безопасности формируем строку столбца (разрешенный список)
-        allowed_fields = ["phone", "session_string", "name", "username", "enabled", "reply_text", "keywords", "negative_words", "mail_limit", "daily_sent", "daily_date"]
+        allowed_fields = ["phone", "session_string", "name", "username", "enabled", "reply_text", "keywords", "negative_words", "mail_limit", "daily_sent", "daily_date", "system_prompt"]
         if field in allowed_fields:
             await conn.execute(f"UPDATE users SET {field} = $1 WHERE uid = $2", value, uid)
 
@@ -509,7 +510,7 @@ async def delete_user(uid: str) -> bool:
     if not pool: return False
     async with pool.acquire() as conn:
         # Удаляем данные из связанных таблиц
-        await conn.execute("DELETE FROM crm WHERE uid = $1", uid)
+        await conn.execute("DELETE FROM crm_contacts WHERE uid = $1", uid)
         await conn.execute("DELETE FROM channels WHERE uid = $1", uid)
         # Удаляем самого пользователя
         result = await conn.execute("DELETE FROM users WHERE uid = $1", uid)

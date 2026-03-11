@@ -33,8 +33,6 @@ services:
       - ./app:/app
     ports:
       - "8080:8080"
-    # We use a volume for app directory to preserve telegram sessions (*.session)
-    # and to allow hot-reloading if needed (though usually not for production).
 
 volumes:
   pgdata:

@@ -446,6 +446,17 @@
 
         <div class="section">
           <div class="section-title">
+            Инструкция ИИ-агента (Промпт)
+          </div>
+          <label style="display:block; font-size:12px; color:var(--hint-color); margin-bottom:10px;">
+            Инструкция, по которой нейросеть будет решать, писать этому лиду или нет. 
+          </label>
+          <textarea id="system-prompt-text" placeholder="You are a strict binary classifier..."></textarea>
+          <button class="btn-blue" onclick="saveConfig(this)">Сохранить инструкцию</button>
+        </div>
+
+        <div class="section">
+          <div class="section-title">
             <div style="display: flex; align-items: center; gap: 8px;">
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--button-color)"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4a1 1 0 0 0-1.4 0l-2.1 2.1a1 1 0 0 0 0 1.4Z"/><path d="m15.5 7.5-3 3"/><path d="m13.5 13.5-3 3"/><path d="m11.5 19.5-3 3"/><path d="M5 21 3 23"/><path d="M17.3 5.3 15 3"/><path d="m9.7 12.9 4.4 4.4"/><path d="m5.3 17.3 4.4 4.4"/></svg>
               Ключевые слова
@@ -560,6 +571,7 @@
 
       const powerToggle = document.getElementById("power-toggle");
       const replyText = document.getElementById("reply-text");
+      const systemPromptText = document.getElementById("system-prompt-text");
       const keywordsText = document.getElementById("keywords-text");
       const statSent = document.getElementById("stat-sent-today");
       const statCrm = document.getElementById("stat-crm-size");
@@ -633,6 +645,13 @@
           if (userEl) userEl.innerText = data.name || (userId ? "Пользователь " + userId : "Профиль");
           powerToggle.checked = data.enabled || false;
           replyText.value = data.reply_text || "";
+          
+          if (data.system_prompt) {
+              systemPromptText.value = data.system_prompt;
+          } else {
+              systemPromptText.value = "You are a strict binary classifier. Answer only YES or NO.\nDecide if the message is a CLIENT REQUEST looking to hire a motion/animation specialist (2D/3D, motion graphics, video), as opposed to a person advertising themselves or looking for a job. Input language may be RU/KZ/EN."
+          }
+          
           keywordsText.value = (data.keywords || []).join(", ");
           statSent.innerText = (data.daily_stats && data.daily_stats.sent) || 0;
           
@@ -846,6 +865,7 @@
               enabled: powerToggle.checked,
               reply_text: replyText.value,
               keywords: keywordsText.value.split(",").map(k => k.trim()).filter(k => k),
+              system_prompt: systemPromptText.value,
             }),
           });
           if (res.ok) {
