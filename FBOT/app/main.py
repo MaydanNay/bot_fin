@@ -1448,6 +1448,7 @@ async def finalize_webapp_login(w_session):
         "mail_limit": 50
     }
     await db.upsert_user(uid_str, user_db_data)
+    invalidate_cache(uid_str)
     
     # Генерация веб-токена
     token = str(uuid.uuid4())
