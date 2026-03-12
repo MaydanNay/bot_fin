@@ -126,6 +126,7 @@ async def init_db():
             ("users", "daily_date", "DATE"),
             ("users", "expires_at", "TIMESTAMP WITH TIME ZONE"),
             ("users", "system_prompt", "TEXT"),
+            ("users", "is_admin", "BOOLEAN DEFAULT FALSE"),
             
             # Таблица crm_contacts (доп. поля)
             ("crm_contacts", "created_at", "TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP"),
@@ -191,7 +192,7 @@ async def register_web_user(phone: str, password_hash: str):
             ON CONFLICT (phone) DO NOTHING
         """, uid, phone, password_hash, "[]", "[]", datetime.now(TZ_KZ).date())
 
-async def admin_add_user(phone: str, months: int = 0):
+async def admin_add_user(phone: str, months: int = 0, is_admin: bool = False):
     if not pool: return None
     uid = f"admin_{phone}"
     
@@ -203,12 +204,13 @@ async def admin_add_user(phone: str, months: int = 0):
         
     async with pool.acquire() as conn:
         await conn.execute("""
-            INSERT INTO users (uid, phone, keywords, negative_words, daily_date, expires_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO users (uid, phone, keywords, negative_words, daily_date, expires_at, is_admin)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (phone) DO UPDATE SET 
                 expires_at = EXCLUDED.expires_at,
+                is_admin = EXCLUDED.is_admin,
                 uid = CASE WHEN users.uid IS NULL THEN EXCLUDED.uid ELSE users.uid END
-        """, uid, phone, "[]", "[]", datetime.now(TZ_KZ).date(), expires_at)
+        """, uid, phone, "[]", "[]", datetime.now(TZ_KZ).date(), expires_at, is_admin)
     return True
 
 async def link_telegram_to_phone(phone: str, uid: str, session_str: str, name: str = None, username: str = None):

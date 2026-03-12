@@ -554,27 +554,24 @@ async def notify_user_and_admins(user_id: Union[str, int], text: str, prefix: st
                 log.debug(f"Failed to notify admin {ad_id}: {e}")
 
 # ================== Команды Бота Управления ==================
-def is_admin(user_id: Any) -> bool:
-    """Проверяет, является ли пользователь администратором (по ID, префиксу или хардкод-номеру)."""
+async def is_admin(user_id: Any) -> bool:
+    """Проверяет, является ли пользователь администратором (по ID, префиксу или полю в БД)."""
     uid_str = str(user_id)
-    # 1. По префиксу admin_
-    if uid_str.startswith("admin_"):
-        return True
     
-    # 2. По префиксу web_ (проверка номера телефона)
-    if uid_str.startswith("web_"):
-        phone = uid_str.replace("web_", "")
-        if phone in HARDCODED_ADMIN_PHONES:
-            return True
-            
-    # 3. По Telegram ID
+    # 1. По Telegram ID (из конфига)
     if uid_str.isdigit() and int(uid_str) in ADMIN_IDS:
         return True
         
-    # 4. Прямая проверка номера
-    if uid_str in HARDCODED_ADMIN_PHONES:
+    # 2. Прямая проверка номера или web_ префикса (из конфига)
+    target_phone = uid_str.replace("web_", "")
+    if target_phone in HARDCODED_ADMIN_PHONES or uid_str in HARDCODED_ADMIN_PHONES:
         return True
-        
+
+    # 3. Проверка в базе данных / кэше
+    u_data = await get_cached_user(uid_str)
+    if u_data and u_data.get('is_admin'):
+        return True
+
     return False
 
 AWAITING_PASSWORD = set()
@@ -594,7 +591,7 @@ async def cmd_start(event):
         await event.respond("Вы были автоматически назначены администратором (первый запуск)!")
     
     # Для админа
-    if is_admin(event.sender_id):
+    if await is_admin(event.sender_id):
         return await event.respond(
             f"Привет, Администратор!\n/admin_help - список админских команд SaaS\n\n🌐 Твоя ссылка Web App:\n{WEBAPP_URL}"
         )
@@ -614,23 +611,23 @@ async def cmd_start(event):
     )
 
 # --- Админка ---
-@bot_client.on(events.NewMessage(pattern=r"^/admin$"))
-async def cmd_admin(event):
-    if is_admin(event.sender_id):
+@bot_client.on(events.NewMessage(pattern=r"^/admin\s+verify$"))
+async def cmd_verify(event):
+    if await is_admin(event.sender_id):
         return await event.respond("Ты уже админ ✅")
     AWAITING_PASSWORD.add(event.sender_id)
     await event.respond("Введи пароль:")
 
 @bot_client.on(events.NewMessage(pattern=r"^/add_user\s+\+(\d+)$"))
 async def cmd_add_user(event):
-    if not is_admin(event.sender_id): return
+    if not await is_admin(event.sender_id): return
     phone = f"+{event.pattern_match.group(1)}"
     await db.add_allowed_phone(phone)
     await event.respond(f"✅ Добавлен в доступ: {phone}")
 
-@bot_client.on(events.NewMessage(pattern=r"^/list_users$"))
-async def cmd_list_users(event):
-    if not is_admin(event.sender_id): return
+@bot_client.on(events.NewMessage(pattern=r"^/state$"))
+async def cmd_state(event):
+    if not await is_admin(event.sender_id): return
     allowed = await db.get_allowed_phones()
     txt = "📋 Разрешенные номера:\n" + "\n".join(allowed) + "\n\n"
     txt += "👥 Активные юзеры:\n"
@@ -1636,12 +1633,12 @@ async def api_get_state(request):
     resp = dict(udata)
     resp["avatar_url"] = avatar_url
     
-    is_admin_flag = is_admin(uid_str)
+    is_admin_flag = await is_admin(uid_str)
     resp["is_admin"] = is_admin_flag
     
     # Срок доступа
     if is_admin_flag:
-        if is_admin(uid_str):
+        if await is_admin(uid_str):
             resp["expires_at"] = "Безлимит"
         else:
             exp = udata.get("expires_at")
@@ -1709,7 +1706,7 @@ async def api_get_profile(request):
     
     target_uid = request.query.get("uid")
     if target_uid and target_uid != auth_uid:
-        if not is_admin(auth_uid):
+        if not await is_admin(auth_uid):
             return web.json_response({"error": "Forbidden"}, status=403)
         uid_str = target_uid
     else:
@@ -1727,7 +1724,7 @@ async def api_get_profile(request):
     
     # Check expiry
     expires_at = udata.get("expires_at")
-    is_admin_flag = is_admin(uid_str)
+    is_admin_flag = await is_admin(uid_str)
     
     if is_admin_flag:
         expires_str = "Безлимит"
@@ -1930,7 +1927,7 @@ async def api_get_audit(request):
     
     target_uid = request.query.get("uid")
     if target_uid and target_uid != auth_uid:
-        if not is_admin(auth_uid):
+        if not await is_admin(auth_uid):
             return web.json_response({"error": "Forbidden"}, status=403)
         uid_str = target_uid
     else:
@@ -1982,14 +1979,14 @@ async def api_crm_delete(request):
 @routes.get("/api/admin/users")
 async def api_admin_users(request):
     uid_str = await get_auth_user_id(request)
-    if not uid_str or not is_admin(uid_str):
+    if not uid_str or not await is_admin(uid_str):
         return web.json_response({"error": "Forbidden"}, status=403)
     try:
         users = await db.get_all_users()
         # Clean up some data for security if needed
         for u in users:
             uid = u.get('uid')
-            is_u_admin = is_admin(uid)
+            is_u_admin = await is_admin(uid)
             u['is_admin'] = is_u_admin # Передаем флаг для UI
                 
             if is_u_admin:
@@ -2012,7 +2009,7 @@ async def api_admin_users(request):
 @routes.post("/api/admin/update_access")
 async def api_admin_update_access(request):
     uid_str = await get_auth_user_id(request)
-    if not uid_str or not is_admin(uid_str):
+    if not uid_str or not await is_admin(uid_str):
         return web.json_response({"error": "Forbidden"}, status=403)
     try:
         data = await request.json()
@@ -2037,7 +2034,7 @@ async def api_admin_update_access(request):
 @routes.post("/api/admin/add_user")
 async def api_admin_add_user(request):
     uid_str = await get_auth_user_id(request)
-    if not uid_str or not is_admin(uid_str):
+    if not uid_str or not await is_admin(uid_str):
         return web.json_response({"error": "Forbidden"}, status=403)
     try:
         data = await request.json()
@@ -2046,7 +2043,8 @@ async def api_admin_add_user(request):
         if not phone:
             return web.json_response({"error": "Missing phone"}, status=400)
         
-        await db.admin_add_user(phone, months)
+        role = data.get("role", "user")
+        await db.admin_add_user(phone, months, is_admin=(role == "admin"))
         return web.json_response({"status": "ok"})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -2346,7 +2344,7 @@ async def api_account_delete(request):
 async def api_admin_revoke_access(request):
     """Полное аннулирование доступа пользователю."""
     uid_str = await get_auth_user_id(request)
-    if not uid_str or not is_admin(uid_str):
+    if not uid_str or not await is_admin(uid_str):
         return web.json_response({"error": "Forbidden"}, status=403)
     try:
         data = await request.json()
