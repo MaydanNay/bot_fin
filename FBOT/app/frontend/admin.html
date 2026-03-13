@@ -304,7 +304,7 @@
               <div class="details">
                 <div class="name">
                   ${u.name || u.username || "Без имени"}
-                  ${u.is_owner ? '<span class="badge-owner">Owner</span>' : (u.is_admin ? '<span class="badge-admin">Admin</span>' : '<span style="font-size:10px; color:var(--hint-color); margin-left:6px;">User</span>')}
+                  ${u.is_owner ? '<span class="badge-owner">Владелец</span>' : (u.is_admin ? '<span class="badge-admin">Администратор</span>' : '<span style="font-size:10px; color:var(--hint-color); margin-left:6px;">Пользователь</span>')}
                 </div>
                 <div class="expiry" style="color: ${u.expires_at === 'Доступ не оплачен' ? '#ef4444' : '#fbbf24'}">
                    ${(u.is_admin || u.is_owner) ? '⚡️ ' : '📅 '} ${u.expires_at || "Бессрочно"}
