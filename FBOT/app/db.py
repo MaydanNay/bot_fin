@@ -186,11 +186,13 @@ async def register_web_user(phone: str, password_hash: str):
     if not pool: return
     uid = f"web_{phone}"
     async with pool.acquire() as conn:
+        now_kz = datetime.now(TZ_KZ)
+        expires_at = now_kz + timedelta(days=1)
         await conn.execute("""
-            INSERT INTO users (uid, phone, password_hash, keywords, negative_words, daily_date)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO users (uid, phone, password_hash, keywords, negative_words, daily_date, expires_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (phone) DO NOTHING
-        """, uid, phone, password_hash, "[]", "[]", datetime.now(TZ_KZ).date())
+        """, uid, phone, password_hash, "[]", "[]", now_kz.date(), expires_at)
 
 async def admin_add_user(phone: str, months: int = 0, is_admin: bool = False):
     if not pool: return None

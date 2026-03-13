@@ -400,7 +400,7 @@ def make_watcher_handler(uid_str: str):
                     return
         
             # Если дошли сюда — этот канал либо в списке разрешенных, либо список пуст (поиск везде)
-            log.info(f"[Watcher:{uid_str}] Message from '{chat_title}': {text[:50]}...")
+            log.info(f"[Watcher:{uid_str}] Incoming message from '{chat_title}' (ID: {event.chat_id})")
 
             keywords = u_data.get("keywords") or DEFAULT_KEYWORDS
             negwords = u_data.get("negative_words") or DEFAULT_NEGATIVE_WORDS
@@ -410,7 +410,8 @@ def make_watcher_handler(uid_str: str):
 
             has_kw = any(k in tnorm for k in kw_norm)
             if not has_kw:
-                return # Быстрый игнор если нет ни одного ключевика
+                # log.debug(f"[Watcher:{uid_str}] No keywords found in: {text[:30]}...")
+                return
 
             neg = any(n in tnorm for n in neg_norm)
             
@@ -420,32 +421,41 @@ def make_watcher_handler(uid_str: str):
             reason = "none"
 
             if neg:
-                # Жесткое отсечение по минус-словам без траты денег на OpenAI
                 ok = False
                 reason = "negative_word_match"
+                log.info(f"[Watcher:{uid_str}] Filtered by negative word")
             elif REQ_VERBS.search(tnorm):
-                # Есть ключевик и подходящий глагол - 100% лид
                 ok = True
                 reason = "primary_pass"
+                log.info(f"[Watcher:{uid_str}] Primary pass (verb match)")
             else:
-                # Есть ключевик, но нет глагола - отдаем нейросети
                 used_openai = True
                 prompt = u_data.get("system_prompt")
+                log.info(f"[Watcher:{uid_str}] Sending to OpenAI...")
                 ai_ok = await openai_gate(text, user_prompt=prompt)
                 ok = ai_ok
                 reason = "openai_yes" if ai_ok else "openai_no"
+                log.info(f"[Watcher:{uid_str}] OpenAI decision: {reason}")
 
-            m = re.search(r"@([A-Za-z0-9_]{4,32})", raw) or re.search(r"t\.me/([A-Za-z0-9_]{4,32})", raw, re.I)
+            # --- Target Extraction Magic ---
             target = None
             sender = await event.get_sender()
             
+            # 1. Ищем @username в самом тексте (часто пишут "писать сюда @user")
+            m = re.search(r"@([A-Za-z0-9_]{4,32})", raw) or re.search(r"t\.me/([A-Za-z0-9_]{4,32})", raw, re.I)
             if m:
                 target = f"@{m.group(1)}"
-            elif sender and getattr(sender.__class__, '__name__', '') == 'User' and not getattr(sender, 'bot', False):
+            
+            # 2. Если в тексте не нашли, берем отправителя сообщения
+            if not target and sender:
                 if getattr(sender, "username", None):
                     target = f"@{sender.username}"
                 else:
+                    # Если юзер без юзернейма, Телетон позволяет слать по ID, если мы в одном чате
                     target = sender.id
+            
+            if ok:
+                log.info(f"[Watcher:{uid_str}] Lead found! Target: {target}, Reason: {reason}")
 
             final = "skip"
             send_error = None
