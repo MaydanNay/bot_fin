@@ -2123,6 +2123,18 @@ async def api_admin_update_role(request):
             
         is_admin_flag = (new_role == "admin")
         await db.update_user_field(target_uid, "is_admin", is_admin_flag)
+        
+        # Синхронизация с таблицей admins и ADMIN_IDS (в памяти)
+        if target_uid.isdigit():
+            target_int = int(target_uid)
+            if is_admin_flag:
+                await db.add_admin(target_int)
+                ADMIN_IDS.add(target_int)
+            else:
+                await db.remove_admin(target_int)
+                if target_int in ADMIN_IDS:
+                    ADMIN_IDS.discard(target_int)
+        
         invalidate_cache(target_uid)
 
         return web.json_response({"status": "ok", "is_admin": is_admin_flag})
@@ -2482,8 +2494,20 @@ async def api_admin_revoke_access(request):
             await conn.execute("UPDATE users SET expires_at = NULL WHERE phone = $1", phone)
         
         user_by_ph = await db.get_user_by_phone(phone)
-        if user_by_ph and user_by_ph.get("uid"):
-            invalidate_cache(user_by_ph["uid"])
+        if user_by_ph:
+            uid = user_by_ph.get("uid")
+            if uid:
+                # При аннулировании доступа также снимаем права админа в users
+                await db.update_user_field(uid, "is_admin", False)
+                
+                # И в таблице admins / ADMIN_IDS (только если это цифровой ID)
+                if uid.isdigit():
+                    u_int = int(uid)
+                    await db.remove_admin(u_int)
+                    if u_int in ADMIN_IDS:
+                        ADMIN_IDS.discard(u_int)
+                        
+                invalidate_cache(uid)
             
         return web.json_response({"status": "ok"})
     except Exception as e:
