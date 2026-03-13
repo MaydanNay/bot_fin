@@ -347,9 +347,7 @@ async def add_channel(uid: str, link: str, channel_id: int = None, ctype: str = 
         status = await conn.execute("""
             INSERT INTO channels (uid, channel_link, channel_id, enabled, type) 
             VALUES ($1, $2, $3, TRUE, $4) 
-            ON CONFLICT (uid, channel_link) DO UPDATE SET 
-                channel_id = EXCLUDED.channel_id,
-                type = EXCLUDED.type
+            ON CONFLICT (uid, channel_link) DO NOTHING
         """, uid, link, channel_id, ctype)
         # status has format "INSERT 0 1" for new rows
         if status and status.startswith("INSERT "):
