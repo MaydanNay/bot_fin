@@ -15,6 +15,7 @@
         --secondary-bg: #1e293b;
         --border-color: rgba(255, 255, 255, 0.1);
         --accent-gradient: linear-gradient(135deg, #8b5cf6, #3b82f6);
+        --owner-gradient: linear-gradient(135deg, #f59e0b, #ef4444);
       }
 
       * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -137,6 +138,19 @@
         margin-left: 6px;
         vertical-align: middle;
       }
+      .badge-owner {
+        background: var(--owner-gradient);
+        color: white;
+        padding: 4px 8px;
+        border-radius: 8px;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        display: inline-block;
+        margin-left: 6px;
+        vertical-align: middle;
+      }
     </style>
   </head>
   <body>
@@ -188,12 +202,49 @@
     <div id="users-list"></div>
     <div id="toast"></div>
 
+    <!-- Modal User Settings -->
+    <div id="user-settings-backdrop" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); z-index: 1100; display: none; justify-content: center; align-items: center; padding: 20px;">
+      <div class="user-card" style="width: 100%; max-width: 400px; border: 1px solid rgba(255,255,255,0.1); background: #1e293b; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.5);">
+         <h3 style="margin-bottom: 20px; text-align: center;">Настройки пользователя</h3>
+         
+         <div style="margin-bottom: 16px;">
+           <label style="font-size: 11px; color: var(--hint-color); text-transform: uppercase; display: block; margin-bottom: 6px;">UID / Телефон</label>
+           <div id="settings-user-info" style="font-size: 14px; font-weight: 600; color: white;"></div>
+         </div>
+
+         <div style="margin-bottom: 16px;">
+           <label style="font-size: 11px; color: var(--hint-color); text-transform: uppercase; display: block; margin-bottom: 6px;">Срок доступа</label>
+           <input type="datetime-local" id="settings-expiry" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border-color); background: rgba(255,255,255,0.05); color: white; outline: none;" />
+         </div>
+
+         <div style="margin-bottom: 24px;">
+           <label style="font-size: 11px; color: var(--hint-color); text-transform: uppercase; display: block; margin-bottom: 6px;">Роль</label>
+           <select id="settings-role" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border-color); background: #2d3748; color: white; outline: none; width: 100%;">
+             <option value="user">Пользователь</option>
+             <option value="admin">Администратор</option>
+           </select>
+         </div>
+
+         <div style="display: flex; gap: 10px;">
+           <button class="btn-opt" style="flex: 2; background: var(--button-color); padding: 14px; border: none;" onclick="saveUserSettings()">Сохранить</button>
+           <button class="btn-opt" style="flex: 1; padding: 14px; border: 1px solid var(--border-color);" onclick="closeUserSettings()">Отмена</button>
+         </div>
+         
+         <div style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 15px;">
+            <button class="btn-opt" style="width: 100%; background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2);" onclick="revokeAccessFromModal()">❌ Аннулировать доступ</button>
+         </div>
+      </div>
+    </div>
+
     <script>
       const tg = window.Telegram.WebApp;
       const API_BASE = "";
       let users = [];
       let webToken = localStorage.getItem("web_token");
       const initData = tg.initData || "";
+      
+      let currentEditingUid = null;
+      let currentEditingPhone = null;
 
       function getAuthHeaders() {
           const headers = { "Content-Type": "application/json" };
@@ -221,7 +272,7 @@
             
             const nowIso = new Date().toISOString().replace('T', ' ').slice(0, 16);
             const activeCount = users.filter(u => {
-                if (u.is_admin || u.expires_at === "Безлимит") return true;
+                if (u.is_admin || u.is_owner || u.expires_at === "Безлимит") return true;
                 return u.expires_at && u.expires_at >= nowIso;
             }).length;
 
@@ -252,51 +303,100 @@
               <div class="avatar">${(u.name || u.username || "?")[0].toUpperCase()}</div>
               <div class="details">
                 <div class="name">
-                  ${u.name || u.username || "Без имени"} (${u.phone || u.uid})
-                  ${u.is_admin ? '<span class="badge-admin">Администратор</span>' : ''}
+                  ${u.name || u.username || "Без имени"}
+                  ${u.is_owner ? '<span class="badge-owner">Owner</span>' : (u.is_admin ? '<span class="badge-admin">Admin</span>' : '<span style="font-size:10px; color:var(--hint-color); margin-left:6px;">User</span>')}
                 </div>
-                <div class="expiry">До: ${u.expires_at || "Бессрочно"}</div>
+                <div class="expiry" style="color: ${u.expires_at === 'Доступ не оплачен' ? '#ef4444' : '#fbbf24'}">
+                   ${(u.is_admin || u.is_owner) ? '⚡️ ' : '📅 '} ${u.expires_at || "Бессрочно"}
+                </div>
               </div>
+              <div class="btn-opt" style="padding: 10px; min-width: 44px; background: rgba(255,255,255,0.05);" onclick="openUserSettings('${u.uid}')">⚙️</div>
             </div>
             <div class="actions" style="grid-template-columns: 1fr 1fr 1fr;">
               <div class="btn-opt" onclick="updateAccess('${u.uid}', '${u.phone}', 1)">+1 мес</div>
               <div class="btn-opt" onclick="updateAccess('${u.uid}', '${u.phone}', 3)">+3 мес</div>
               <div class="btn-opt" onclick="updateAccess('${u.uid}', '${u.phone}', 12)">+1 год</div>
-              
-              <div class="btn-opt" style="grid-column: span 2; background: rgba(139, 92, 246, 0.1);" onclick="toggleRole('${u.uid}', ${u.is_admin})">
-                ${u.is_admin ? '🚩 Снять права админа' : '👑 Сделать админом'}
-              </div>
-              <div class="btn-opt" style="background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: rgba(239, 68, 68, 0.2);" onclick="revokeAccess('${u.phone}')">
-                ❌ Оборвать
-              </div>
             </div>
           </div>
         `).join("");
       }
 
-      async function toggleRole(targetUid, currentIsAdmin) {
-        tg.HapticFeedback.impactOccurred("medium");
-        const newRole = currentIsAdmin ? "user" : "admin";
-        if (!confirm(`Вы уверены, что хотите сделать пользователя ${newRole === 'admin' ? 'администратором' : 'обычным пользователем'}?`)) return;
+      function openUserSettings(uid) {
+        const u = users.find(x => x.uid === uid);
+        if(!u) return;
+        currentEditingUid = uid;
+        currentEditingPhone = u.phone;
+        
+        document.getElementById("settings-user-info").innerText = `${u.name || u.username || 'Юзер'} (${u.phone || u.uid})`;
+        
+        // Превращаем дату из БД (01.01.2024 12:00) в формат для input datetime-local (2024-01-01T12:00)
+        if(u.expires_at && u.expires_at !== 'Безлимит' && u.expires_at !== 'Доступ не оплачен') {
+            const parts = u.expires_at.split(' ');
+            if (parts.length === 2) {
+              const d = parts[0].split('.');
+              if (d.length === 3) {
+                document.getElementById("settings-expiry").value = `${d[2]}-${d[1]}-${d[0]}T${parts[1]}`;
+              }
+            } else {
+                document.getElementById("settings-expiry").value = "";
+            }
+        } else {
+            document.getElementById("settings-expiry").value = "";
+        }
+        
+        document.getElementById("settings-role").value = u.is_admin ? "admin" : "user";
+        document.getElementById("user-settings-backdrop").style.display = "flex";
+        tg.HapticFeedback.impactOccurred("light");
+      }
 
+      function closeUserSettings() {
+        document.getElementById("user-settings-backdrop").style.display = "none";
+      }
+
+      async function saveUserSettings() {
+        const role = document.getElementById("settings-role").value;
+        const expiry = document.getElementById("settings-expiry").value;
+        
+        tg.HapticFeedback.impactOccurred("heavy");
         try {
-          const res = await fetch(`${API_BASE}/api/admin/update_role`, {
+          // 1. Сохраняем роль
+          const resRole = await fetch(`${API_BASE}/api/admin/update_role`, {
             method: "POST",
             headers: getAuthHeaders(),
-            body: JSON.stringify({ uid: targetUid, role: newRole })
+            body: JSON.stringify({ uid: currentEditingUid, role: role })
           });
-          const data = await res.json();
-          if (res.ok) {
-            showToast("Роль обновлена!");
-            loadUsers();
-          } else {
-            showToast(data.error || "Ошибка");
+          
+          if (!resRole.ok) {
+              const err = await resRole.json();
+              showToast(err.error || "Ошибка роли");
+              return;
           }
-        } catch (e) { showToast("Ошибка сети"); }
+
+          // 2. Сохраняем дату (если указана)
+          if(expiry) {
+             const isoDate = new Date(expiry).toISOString();
+             await fetch(`${API_BASE}/api/admin/update_access`, {
+                method: "POST",
+                headers: getAuthHeaders(),
+                body: JSON.stringify({ phone: currentEditingPhone, expiry_date: isoDate })
+             });
+          }
+
+          showToast("Сохранено!");
+          closeUserSettings();
+          loadUsers();
+        } catch (e) { showToast("Ошибка сохранения"); }
+      }
+
+      async function revokeAccessFromModal() {
+          if (!currentEditingPhone) return;
+          if (await revokeAccess(currentEditingPhone)) {
+              closeUserSettings();
+          }
       }
 
       async function revokeAccess(phone) {
-        if (!confirm("Вы уверены, что хотите полностью аннулировать доступ этому пользователю?")) return;
+        if (!confirm("Вы уверены, что хотите полностью аннулировать доступ этому пользователю?")) return false;
         tg.HapticFeedback.impactOccurred("heavy");
         try {
           const res = await fetch(`${API_BASE}/api/admin/revoke_access`, {
@@ -307,11 +407,13 @@
           if (res.ok) {
             showToast("Доступ аннулирован!");
             loadUsers();
+            return true;
           } else {
             const data = await res.json();
             showToast(data.error || "Ошибка");
           }
         } catch (e) { showToast("Ошибка сети"); }
+        return false;
       }
 
       async function updateAccess(targetUid, phone, months) {
@@ -372,7 +474,6 @@
           tg.ready();
           setTimeout(() => tg.expand(), 500);
         }
-        // Задержка загрузки для стабильности в Web K
         setTimeout(() => loadUsers(), 500);
       };
     </script>

@@ -564,10 +564,38 @@ async def notify_user_and_admins(user_id: Union[str, int], text: str, prefix: st
                 log.debug(f"Failed to notify admin {ad_id}: {e}")
 
 # ================== Команды Бота Управления ==================
+async def is_owner(user_id: Any) -> bool:
+    """Проверяет, является ли пользователь владельцем (Супер-админом)."""
+    uid_str = str(user_id)
+    # Ваш номер - супер-админ
+    owner_phone = "77024383624"
+    
+    # 1. Прямая проверка (для web-id с плюсом или без)
+    target = uid_str.replace("web_", "").replace("+", "").strip()
+    if target == owner_phone:
+        return True
+    
+    # 2. Проверка через базу данных для Telegram UID
+    try:
+        # Используем кэш для скорости
+        u_data = await get_cached_user(uid_str)
+        if u_data:
+            u_phone = str(u_data.get('phone', '')).replace("+", "").strip()
+            if u_phone == owner_phone:
+                return True
+    except:
+        pass
+        
+    return False
+
 async def is_admin(user_id: Any) -> bool:
     """Проверяет, является ли пользователь администратором (по ID, префиксу или полю в БД)."""
     uid_str = str(user_id)
     
+    # Владелец всегда админ
+    if await is_owner(uid_str):
+        return True
+
     # 1. По Telegram ID (из конфига)
     if uid_str.isdigit() and int(uid_str) in ADMIN_IDS:
         return True
@@ -1695,6 +1723,8 @@ async def api_update_state(request):
             update_fields["mail_limit"] = int(data["mail_limit"])
         if "system_prompt" in data:
             update_fields["system_prompt"] = str(data["system_prompt"])
+        if "negative_words" in data:
+            update_fields["negative_words"] = json.dumps(_dedup_keep_order(data["negative_words"]))
             
         if update_fields:
             import db
@@ -1702,9 +1732,6 @@ async def api_update_state(request):
                 set_parts = []
                 values = []
                 for i, (k, v) in enumerate(update_fields.items(), start=1):
-                    # Сериализуем списки в JSON для БД
-                    if k in ["keywords", "negative_words"] and isinstance(v, list):
-                        v = json.dumps(v)
                     set_parts.append(f"{k} = ${i}")
                     values.append(v)
                 
@@ -2017,6 +2044,7 @@ async def api_admin_users(request):
         # Clean up some data for security if needed
         for u in users:
             uid = u.get('uid')
+            u['is_owner'] = await is_owner(uid)
             is_u_admin = await is_admin(uid)
             u['is_admin'] = is_u_admin # Передаем флаг для UI
                 
@@ -2025,6 +2053,9 @@ async def api_admin_users(request):
             else:
                 exp = u.get('expires_at')
                 if isinstance(exp, (datetime, date)):
+                    # Приводим к часовому поясу Казахстана для корректного отображения
+                    if isinstance(exp, datetime) and exp.tzinfo:
+                        exp = exp.astimezone(db.TZ_KZ)
                     u['expires_at'] = exp.strftime("%d.%m.%Y %H:%M")
                 else:
                     u['expires_at'] = "Доступ не оплачен"
@@ -2046,12 +2077,25 @@ async def api_admin_update_access(request):
         data = await request.json()
         phone = data.get("phone")
         months = data.get("months")
-        if not phone or months is None:
-            return web.json_response({"error": "Missing phone or months"}, status=400)
+        exact_date = data.get("expiry_date") # ISO string
+        
+        if not phone:
+            return web.json_response({"error": "Missing phone"}, status=400)
             
-        new_expiry = await db.update_user_access(phone, int(months))
+        if exact_date:
+            try:
+                dt = datetime.fromisoformat(exact_date.replace("Z", "+00:00"))
+                await db.set_user_expiry(phone, dt)
+                new_expiry = dt
+            except Exception as e:
+                return web.json_response({"error": f"Invalid date: {e}"}, status=400)
+        elif months is not None:
+            new_expiry = await db.update_user_access(phone, int(months))
+        else:
+            return web.json_response({"error": "Missing months or expiry_date"}, status=400)
+
         if not new_expiry:
-            return web.json_response({"error": "User not found or database pool error"}, status=404)
+            return web.json_response({"error": "User not found"}, status=404)
         
         # Инвалидируем кэш для ВСЕХ юзеров с этим UID (так как поиск по телефону)
         user_by_ph = await db.get_user_by_phone(phone)
@@ -2071,6 +2115,11 @@ async def api_admin_update_role(request):
         data = await request.json()
         target_uid = data.get("uid")
         new_role = data.get("role") # "admin" or "user"
+        
+        # Только Owner может менять роль на Admin или снимать её
+        if not await is_owner(uid_str):
+             return web.json_response({"error": "Only Owner can change roles"}, status=403)
+
         if not target_uid or not new_role:
             return web.json_response({"error": "Missing uid or role"}, status=400)
             
@@ -2095,6 +2144,11 @@ async def api_admin_add_user(request):
             return web.json_response({"error": "Missing phone"}, status=400)
         
         role = data.get("role", "user")
+        
+        # Только Owner может добавлять новых администраторов
+        if role == "admin" and not await is_owner(uid_str):
+            return web.json_response({"error": "Only Owner can add admins"}, status=403)
+            
         await db.admin_add_user(phone, months, is_admin=(role == "admin"))
         return web.json_response({"status": "ok"})
     except Exception as e:

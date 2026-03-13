@@ -515,6 +515,13 @@ async def update_user_access(phone: str, months: int):
         await conn.execute("UPDATE users SET expires_at = $1 WHERE phone = $2", new_expiry, phone)
         return new_expiry
 
+async def set_user_expiry(phone: str, expiry_date: Optional[datetime]):
+    """Устанавливает точную дату окончания доступа."""
+    if not pool: return False
+    async with pool.acquire() as conn:
+        await conn.execute("UPDATE users SET expires_at = $1 WHERE phone = $2", expiry_date, phone)
+        return True
+
 async def clear_user_session(uid: str) -> bool:
     """Сбрасывает session_string пользователя (выход из Telegram-аккаунта)."""
     if not pool: return False
