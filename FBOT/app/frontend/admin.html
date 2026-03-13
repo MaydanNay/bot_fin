@@ -310,13 +310,15 @@
                    ${(u.is_admin || u.is_owner) ? '⚡️ ' : '📅 '} ${u.expires_at || "Бессрочно"}
                 </div>
               </div>
-              <div class="btn-opt" style="padding: 10px; min-width: 44px; background: rgba(255,255,255,0.05);" onclick="openUserSettings('${u.uid}')">⚙️</div>
             </div>
-            <div class="actions" style="grid-template-columns: 1fr 1fr 1fr;">
+            <div class="actions" style="grid-template-columns: 1fr 1fr 1fr; margin-bottom: 10px;">
               <div class="btn-opt" onclick="updateAccess('${u.uid}', '${u.phone}', 1)">+1 мес</div>
               <div class="btn-opt" onclick="updateAccess('${u.uid}', '${u.phone}', 3)">+3 мес</div>
               <div class="btn-opt" onclick="updateAccess('${u.uid}', '${u.phone}', 12)">+1 год</div>
             </div>
+            <button class="btn-opt" style="width: 100%; border: 1px solid rgba(255,255,255,0.1); background: rgba(139, 92, 246, 0.05); padding: 12px;" onclick="openUserSettings('${u.uid}')">
+              ⚙️ Настройки и права
+            </button>
           </div>
         `).join("");
       }
