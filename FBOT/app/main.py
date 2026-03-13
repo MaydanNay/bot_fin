@@ -1679,20 +1679,35 @@ async def api_update_state(request):
         user_data = await get_cached_user(uid_str)
         if not user_data: return web.json_response({"error": "Not registered"}, status=404)
         
+        update_fields = {}
         if "enabled" in data:
             enable_val = bool(data["enabled"])
             # Администраторам подписка не требуется
             if enable_val and not is_subscribed(user_data) and not await is_admin(uid_str):
                 return web.json_response({"error": "Subscription required to enable worker"}, status=403)
-            await db.update_user_field(uid_str, "enabled", enable_val)
+            update_fields["enabled"] = enable_val
+            
         if "reply_text" in data:
-            await db.update_user_field(uid_str, "reply_text", str(data["reply_text"]))
+            update_fields["reply_text"] = str(data["reply_text"])
         if "keywords" in data:
-            await db.update_user_field(uid_str, "keywords", _dedup_keep_order(data["keywords"]))
+            update_fields["keywords"] = json.dumps(_dedup_keep_order(data["keywords"]))
         if "mail_limit" in data:
-            await db.update_user_field(uid_str, "mail_limit", int(data["mail_limit"]))
+            update_fields["mail_limit"] = int(data["mail_limit"])
         if "system_prompt" in data:
-            await db.update_user_field(uid_str, "system_prompt", str(data["system_prompt"]))
+            update_fields["system_prompt"] = str(data["system_prompt"])
+            
+        if update_fields:
+            import db
+            async with db.pool.acquire() as conn:
+                set_parts = []
+                values = []
+                for i, (k, v) in enumerate(update_fields.items(), start=1):
+                    set_parts.append(f"{k} = ${i}")
+                    values.append(v)
+                
+                values.append(uid_str)
+                sql = f"UPDATE users SET {', '.join(set_parts)} WHERE uid = ${len(values)}"
+                await conn.execute(sql, *values)
             
         invalidate_cache(uid_str)
         return web.json_response({"status": "ok"})

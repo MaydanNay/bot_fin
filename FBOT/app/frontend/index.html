@@ -858,11 +858,21 @@
           showQRAuthScreen();
       }
 
-      async function saveConfig(btn) {
-        if (!btn) btn = event?.target;
+      async function saveConfig(element) {
+        // Определяем, вызвано ли это событием/прямым вызовом или это элемент
+        let target = (element instanceof HTMLElement) ? element : (element && element.target ? element.target : null);
+        
         if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred("light");
-        const oldText = btn.innerText;
-        btn.innerText = "⏳...";
+        
+        let oldText = "";
+        let isButton = target && (target.tagName === "BUTTON" || target.classList.contains("btn-blue"));
+        
+        if (isButton) {
+          oldText = target.innerText;
+          target.innerText = "⏳...";
+          target.disabled = true;
+        }
+
         try {
           const res = await fetch(`${API_BASE}/api/update`, {
             method: "POST",
@@ -874,28 +884,41 @@
               system_prompt: systemPromptText.value,
             }),
           });
+          
           if (res.ok) {
-            btn.innerText = "✅ Готово";
-            btn.classList.add("success");
-            setTimeout(() => {
-                btn.innerText = oldText;
-                btn.classList.remove("success");
-            }, 2000);
+            if (isButton) {
+              target.innerText = "✅ Готово";
+              target.classList.add("success");
+              setTimeout(() => {
+                  target.innerText = oldText;
+                  target.classList.remove("success");
+                  target.disabled = false;
+              }, 2000);
+            }
           } else {
             const errData = await res.json().catch(() => ({}));
             if (tg.showAlert) tg.showAlert("Ошибка сохранения: " + (errData.error || res.status));
-            // Откатываем состояние чекбокса, так как сервер его не принял
-            powerToggle.checked = !powerToggle.checked;
-            btn.innerText = "❌ Ошибка";
-            setTimeout(() => {
-                btn.innerText = oldText;
-            }, 2000);
+            
+            // Если ошибка, откатываем состояние чекбокса только если мы его переключили
+            // (логика простая: если сервер не принял, значит состояние не изменилось)
+            if (!isButton) powerToggle.checked = !powerToggle.checked;
+            
+            if (isButton) {
+              target.innerText = "❌ Ошибка";
+              target.disabled = false;
+              setTimeout(() => target.innerText = oldText, 2000);
+            }
           }
         } catch (e) { 
-          btn.innerText = "❌"; 
-          powerToggle.checked = !powerToggle.checked;
+          console.error("Save config error:", e);
+          if (!isButton) powerToggle.checked = !powerToggle.checked;
           if (tg.showAlert) tg.showAlert("Сбой сети при сохранении");
-          setTimeout(() => btn.innerText = oldText, 2000);
+          
+          if (isButton) {
+            target.innerText = "❌";
+            target.disabled = false;
+            setTimeout(() => target.innerText = oldText, 2000);
+          }
         }
       }
 
