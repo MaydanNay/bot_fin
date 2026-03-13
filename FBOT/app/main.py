@@ -1702,6 +1702,9 @@ async def api_update_state(request):
                 set_parts = []
                 values = []
                 for i, (k, v) in enumerate(update_fields.items(), start=1):
+                    # Сериализуем списки в JSON для БД
+                    if k in ["keywords", "negative_words"] and isinstance(v, list):
+                        v = json.dumps(v)
                     set_parts.append(f"{k} = ${i}")
                     values.append(v)
                 
@@ -2056,6 +2059,26 @@ async def api_admin_update_access(request):
             invalidate_cache(user_by_ph["uid"])
 
         return web.json_response({"status": "ok", "new_expiry": new_expiry.strftime("%d.%m.%Y %H:%M")})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+@routes.post("/api/admin/update_role")
+async def api_admin_update_role(request):
+    uid_str = await get_auth_user_id(request)
+    if not uid_str or not await is_admin(uid_str):
+        return web.json_response({"error": "Forbidden"}, status=403)
+    try:
+        data = await request.json()
+        target_uid = data.get("uid")
+        new_role = data.get("role") # "admin" or "user"
+        if not target_uid or not new_role:
+            return web.json_response({"error": "Missing uid or role"}, status=400)
+            
+        is_admin_flag = (new_role == "admin")
+        await db.update_user_field(target_uid, "is_admin", is_admin_flag)
+        invalidate_cache(target_uid)
+
+        return web.json_response({"status": "ok", "is_admin": is_admin_flag})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 

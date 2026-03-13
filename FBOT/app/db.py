@@ -270,7 +270,7 @@ async def update_user_field(uid: str, field: str, value: Any):
     
     async with pool.acquire() as conn:
         # Для безопасности формируем строку столбца (разрешенный список)
-        allowed_fields = ["phone", "session_string", "name", "username", "enabled", "reply_text", "keywords", "negative_words", "mail_limit", "daily_sent", "daily_date", "system_prompt"]
+        allowed_fields = ["phone", "session_string", "name", "username", "enabled", "reply_text", "keywords", "negative_words", "mail_limit", "daily_sent", "daily_date", "system_prompt", "is_admin"]
         if field in allowed_fields:
             await conn.execute(f"UPDATE users SET {field} = $1 WHERE uid = $2", value, uid)
 

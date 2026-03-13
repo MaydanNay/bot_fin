@@ -258,22 +258,69 @@
                 <div class="expiry">До: ${u.expires_at || "Бессрочно"}</div>
               </div>
             </div>
-            <div class="actions">
-              <div class="btn-opt" onclick="updateAccess('${u.uid}', 1)">+1 мес</div>
-              <div class="btn-opt" onclick="updateAccess('${u.uid}', 3)">+3 мес</div>
-              <div class="btn-opt" onclick="updateAccess('${u.uid}', 12)">+1 год</div>
+            <div class="actions" style="grid-template-columns: 1fr 1fr 1fr;">
+              <div class="btn-opt" onclick="updateAccess('${u.uid}', '${u.phone}', 1)">+1 мес</div>
+              <div class="btn-opt" onclick="updateAccess('${u.uid}', '${u.phone}', 3)">+3 мес</div>
+              <div class="btn-opt" onclick="updateAccess('${u.uid}', '${u.phone}', 12)">+1 год</div>
+              
+              <div class="btn-opt" style="grid-column: span 2; background: rgba(139, 92, 246, 0.1);" onclick="toggleRole('${u.uid}', ${u.is_admin})">
+                ${u.is_admin ? '🚩 Снять права админа' : '👑 Сделать админом'}
+              </div>
+              <div class="btn-opt" style="background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: rgba(239, 68, 68, 0.2);" onclick="revokeAccess('${u.phone}')">
+                ❌ Оборвать
+              </div>
             </div>
           </div>
         `).join("");
       }
 
-      async function updateAccess(targetUid, months) {
+      async function toggleRole(targetUid, currentIsAdmin) {
+        tg.HapticFeedback.impactOccurred("medium");
+        const newRole = currentIsAdmin ? "user" : "admin";
+        if (!confirm(`Вы уверены, что хотите сделать пользователя ${newRole === 'admin' ? 'администратором' : 'обычным пользователем'}?`)) return;
+
+        try {
+          const res = await fetch(`${API_BASE}/api/admin/update_role`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ uid: targetUid, role: newRole })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            showToast("Роль обновлена!");
+            loadUsers();
+          } else {
+            showToast(data.error || "Ошибка");
+          }
+        } catch (e) { showToast("Ошибка сети"); }
+      }
+
+      async function revokeAccess(phone) {
+        if (!confirm("Вы уверены, что хотите полностью аннулировать доступ этому пользователю?")) return;
+        tg.HapticFeedback.impactOccurred("heavy");
+        try {
+          const res = await fetch(`${API_BASE}/api/admin/revoke_access`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ phone })
+          });
+          if (res.ok) {
+            showToast("Доступ аннулирован!");
+            loadUsers();
+          } else {
+            const data = await res.json();
+            showToast(data.error || "Ошибка");
+          }
+        } catch (e) { showToast("Ошибка сети"); }
+      }
+
+      async function updateAccess(targetUid, phone, months) {
         tg.HapticFeedback.impactOccurred("medium");
         try {
           const res = await fetch(`${API_BASE}/api/admin/update_access`, {
             method: "POST",
             headers: getAuthHeaders(),
-            body: JSON.stringify({ uid: targetUid, months })
+            body: JSON.stringify({ phone, months })
           });
           const data = await res.json();
           if (res.ok) {
