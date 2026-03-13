@@ -645,7 +645,11 @@
           
           const userEl = document.getElementById("user-name");
           if (userEl) userEl.innerText = data.name || (userId ? "Пользователь " + userId : "Профиль");
-          powerToggle.checked = data.enabled || false;
+          
+          if (typeof data.enabled !== 'undefined') {
+            powerToggle.checked = data.enabled || false;
+          }
+          
           replyText.value = data.reply_text || "";
           
           if (data.system_prompt) {
@@ -877,8 +881,22 @@
                 btn.innerText = oldText;
                 btn.classList.remove("success");
             }, 2000);
+          } else {
+            const errData = await res.json().catch(() => ({}));
+            if (tg.showAlert) tg.showAlert("Ошибка сохранения: " + (errData.error || res.status));
+            // Откатываем состояние чекбокса, так как сервер его не принял
+            powerToggle.checked = !powerToggle.checked;
+            btn.innerText = "❌ Ошибка";
+            setTimeout(() => {
+                btn.innerText = oldText;
+            }, 2000);
           }
-        } catch (e) { btn.innerText = "❌"; }
+        } catch (e) { 
+          btn.innerText = "❌"; 
+          powerToggle.checked = !powerToggle.checked;
+          if (tg.showAlert) tg.showAlert("Сбой сети при сохранении");
+          setTimeout(() => btn.innerText = oldText, 2000);
+        }
       }
 
       let allCrmContacts = [];
@@ -1075,14 +1093,15 @@
         btn.innerText = "⏳...";
         
         try {
-          const promises = allUserChannels.map(ch => 
-            fetch(`${API_BASE}/api/channels/toggle`, {
-              method: "POST",
-              headers: getAuthHeaders(),
-              body: JSON.stringify({ link: ch.channel_link, enabled: ch.enabled })
+          const res = await fetch(`${API_BASE}/api/channels/bulk_toggle`, {
+            method: "POST",
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ 
+              channels: allUserChannels.map(ch => ({ link: ch.channel_link, enabled: ch.enabled }))
             })
-          );
-          await Promise.all(promises);
+          });
+          
+          if (!res.ok) throw new Error("Server error");
           updateChannelBadge();
           btn.innerText = "✅ Сохранено";
           setTimeout(() => {

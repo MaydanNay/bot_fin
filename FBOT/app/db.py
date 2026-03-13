@@ -401,6 +401,24 @@ async def toggle_all_channels(uid: str, enabled: bool):
     async with pool.acquire() as conn:
         await conn.execute("UPDATE channels SET enabled = $1 WHERE uid = $2", enabled, uid)
 
+async def bulk_toggle_channels(uid: str, channels_data: List[Dict[str, Any]]):
+    """
+    Массовое обновление статуса каналов.
+    channels_data: список словарей вида {"link": str, "enabled": bool}
+    """
+    if not pool or not channels_data: return
+    
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            # Используем executemany для эффективности
+            # Подготавливаем данные в виде списка кортежей
+            data = [(ch['enabled'], uid, ch['link']) for ch in channels_data if 'link' in ch and 'enabled' in ch]
+            if data:
+                await conn.executemany(
+                    "UPDATE channels SET enabled = $1 WHERE uid = $2 AND channel_link = $3",
+                    data
+                )
+
 # --- TOKENS ---
 
 async def set_web_token(token: str, phone: str):

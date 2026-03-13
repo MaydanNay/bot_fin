@@ -336,7 +336,7 @@ def make_watcher_handler(uid_str: str):
                 return
             
             # Check expiry (Strict: no access if expires_at is None or past)
-            if not is_subscribed(u_data):
+            if not is_subscribed(u_data) and not await is_admin(uid_str):
                 return
 
             if getattr(event, 'out', False):
@@ -805,21 +805,22 @@ async def finalize_login(user_id: int):
     except Exception as e:
         log.warning(f"Failed to remove temp session: {e}")
     
-    # Preserve existing enabled state if it's a re-login
+    # Preserve existing settings if it's a re-login
     existing_user = await get_cached_user(uid_str)
-    existing_enabled = existing_user.get("enabled", False) if existing_user else False
+    def_kw = DEFAULT_KEYWORDS.copy()
+    def_neg = DEFAULT_NEGATIVE_WORDS.copy()
 
     user_db_data = {
         "phone": auth["phone"],
         "session_string": session_str,
-        "enabled": existing_enabled,
-        "reply_text": DEFAULT_REPLY,
-        "keywords": DEFAULT_KEYWORDS.copy(),
-        "negative_words": DEFAULT_NEGATIVE_WORDS.copy(),
-        "system_prompt": DEFAULT_SYSTEM_PROMPT,
-        "daily_sent": 0,
-        "daily_date": datetime.now(db.TZ_KZ).date(),
-        "mail_limit": 50
+        "enabled": existing_user.get("enabled", False) if existing_user else False,
+        "reply_text": existing_user.get("reply_text", DEFAULT_REPLY) if existing_user else DEFAULT_REPLY,
+        "keywords": existing_user.get("keywords", def_kw) if existing_user else def_kw,
+        "negative_words": existing_user.get("negative_words", def_neg) if existing_user else def_neg,
+        "system_prompt": existing_user.get("system_prompt", DEFAULT_SYSTEM_PROMPT) if existing_user else DEFAULT_SYSTEM_PROMPT,
+        "daily_sent": existing_user.get("daily_sent", 0) if existing_user else 0,
+        "daily_date": existing_user.get("daily_date", datetime.now(db.TZ_KZ).date()) if existing_user else datetime.now(db.TZ_KZ).date(),
+        "mail_limit": existing_user.get("mail_limit", 50) if existing_user else 50
     }
     await db.upsert_user(uid_str, user_db_data)
     
@@ -905,7 +906,7 @@ async def cmd_user_toggle(event):
     if not user_data: return
     enable = event.pattern_match.group(0) == "/on"
 
-    if enable and not is_subscribed(user_data):
+    if enable and not is_subscribed(user_data) and not await is_admin(uid_str):
         return await event.respond("🚫 Доступ ограничен. Пожалуйста, оплатите подписку для запуска воркера.")
 
     await db.update_user_field(uid_str, "enabled", enable)
@@ -1059,7 +1060,7 @@ async def cmd_user_collect_dialogs(event):
     user_data = await get_cached_user(uid_str)
     if not user_data: return
     
-    if not is_subscribed(user_data):
+    if not is_subscribed(user_data) and not await is_admin(uid_str):
         return await event.respond("🚫 Доступ ограничен. Сбор диалогов доступен только по подписке.")
 
     client = user_clients.get(uid_str)
@@ -1137,7 +1138,7 @@ async def cmd_user_run_mail(event):
     if not client:
         return await event.respond("❌ Твой юзербот сейчас оффлайн.")
 
-    if not is_subscribed(user_data):
+    if not is_subscribed(user_data) and not await is_admin(uid_str):
         return await event.respond("🚫 Доступ ограничен. Рассылка доступна только по подписке.")
 
     if uid_str in active_mailings:
@@ -1439,23 +1440,24 @@ async def finalize_webapp_login(w_session):
     
     # Подготовка данных для БД
     user_phone = w_session.get("phone") or str(uid)
-    # Preserve existing enabled state if it's a re-login
+    # Preserve existing settings if it's a re-login
     existing_user = await get_cached_user(uid_str)
-    existing_enabled = existing_user.get("enabled", False) if existing_user else False
+    def_kw = DEFAULT_KEYWORDS.copy()
+    def_neg = DEFAULT_NEGATIVE_WORDS.copy()
 
     user_db_data = {
         "phone": user_phone,
         "session_string": session_str,
         "name": w_session.get("name"),
         "username": w_session.get("username"),
-        "enabled": existing_enabled,
-        "reply_text": DEFAULT_REPLY,
-        "keywords": DEFAULT_KEYWORDS.copy(),
-        "negative_words": DEFAULT_NEGATIVE_WORDS.copy(),
-        "system_prompt": DEFAULT_SYSTEM_PROMPT,
-        "daily_sent": 0,
-        "daily_date": datetime.now(db.TZ_KZ).date(),
-        "mail_limit": 50
+        "enabled": existing_user.get("enabled", False) if existing_user else False,
+        "reply_text": existing_user.get("reply_text", DEFAULT_REPLY) if existing_user else DEFAULT_REPLY,
+        "keywords": existing_user.get("keywords", def_kw) if existing_user else def_kw,
+        "negative_words": existing_user.get("negative_words", def_neg) if existing_user else def_neg,
+        "system_prompt": existing_user.get("system_prompt", DEFAULT_SYSTEM_PROMPT) if existing_user else DEFAULT_SYSTEM_PROMPT,
+        "daily_sent": existing_user.get("daily_sent", 0) if existing_user else 0,
+        "daily_date": existing_user.get("daily_date", datetime.now(db.TZ_KZ).date()) if existing_user else datetime.now(db.TZ_KZ).date(),
+        "mail_limit": existing_user.get("mail_limit", 50) if existing_user else 50
     }
     await db.upsert_user(uid_str, user_db_data)
     invalidate_cache(uid_str)
@@ -1680,7 +1682,8 @@ async def api_update_state(request):
         
         if "enabled" in data:
             enable_val = bool(data["enabled"])
-            if enable_val and not is_subscribed(user_data):
+            # Администраторам подписка не требуется
+            if enable_val and not is_subscribed(user_data) and not await is_admin(uid_str):
                 return web.json_response({"error": "Subscription required to enable worker"}, status=403)
             await db.update_user_field(uid_str, "enabled", enable_val)
         if "reply_text" in data:
@@ -2067,6 +2070,12 @@ async def api_collect_dialogs(request):
         return web.json_response({"error": "Unauthorized"}, status=401)
     
     try:
+        udata = await get_cached_user(uid_str)
+        if not udata: return web.json_response({"error": "Not registered"}, status=404)
+        
+        if not is_subscribed(udata) and not await is_admin(uid_str):
+            return web.json_response({"error": "Subscription required to collect dialogs"}, status=403)
+
         data = await request.json()
         ctype = data.get("type", "contacts") # "contacts" or "channels"
         
@@ -2213,6 +2222,23 @@ async def api_channels_toggle(request):
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
 
+@routes.post("/api/channels/bulk_toggle")
+async def api_channels_bulk_toggle(request):
+    uid_str = await get_auth_user_id(request)
+    if not uid_str:
+        return web.json_response({"error": "Unauthorized"}, status=401)
+    try:
+        data = await request.json()
+        channels = data.get("channels")
+        if not isinstance(channels, list):
+            return web.json_response({"error": "Invalid channels data"}, status=400)
+            
+        await db.bulk_toggle_channels(uid_str, channels)
+        invalidate_cache(uid_str)
+        return web.json_response({"status": "ok"})
+    except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
 @routes.post("/api/mail")
 async def api_run_mail(request):
     uid_str = await get_auth_user_id(request)
@@ -2242,7 +2268,7 @@ async def api_run_mail(request):
         client = user_clients.get(uid_str)
         if not client: return web.json_response({"error": "User client offline"}, status=400)
             
-        if not is_subscribed(udata):
+        if not is_subscribed(udata) and not await is_admin(uid_str):
             return web.json_response({"error": "Subscription required to run mailing"}, status=403)
             
         if uid_str in active_mailings:
