@@ -21,6 +21,81 @@
         --accent-gradient: linear-gradient(135deg, #8b5cf6, #3b82f6);
       }
 
+      /* No Access Modal Styles */
+      #no-access-backdrop {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0, 0, 0, 0.4);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        display: none; justify-content: center; align-items: center;
+        z-index: 3000;
+        padding: 20px;
+        animation: fadeIn 0.3s ease;
+      }
+      .no-access-card {
+        background: #ffffff;
+        width: 100%;
+        max-width: 380px;
+        border-radius: 32px;
+        padding: 40px 24px 32px;
+        text-align: center;
+        border: 1px solid var(--border-color);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+        position: relative;
+        animation: modalScale 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      }
+      @keyframes modalScale {
+        from { transform: scale(0.8); opacity: 0; }
+        to { transform: scale(1); opacity: 1; }
+      }
+      .no-access-icon {
+        width: 80px; height: 80px;
+        background: linear-gradient(135deg, #fbbf24, #f59e0b);
+        border-radius: 24px;
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto 24px;
+        color: white;
+        box-shadow: 0 10px 25px rgba(245, 158, 11, 0.3);
+      }
+      .no-access-title {
+        font-size: 24px; font-weight: 800;
+        margin-bottom: 12px;
+        color: var(--text-color);
+      }
+      .no-access-text {
+        font-size: 15px;
+        color: var(--hint-color);
+        line-height: 1.6;
+        margin-bottom: 32px;
+      }
+      .btn-buy {
+        width: 100%;
+        background: var(--accent-gradient);
+        color: white;
+        border: none;
+        border-radius: 18px;
+        padding: 18px;
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+        display: flex; align-items: center; justify-content: center; gap: 8px;
+        transition: all 0.2s;
+        text-decoration: none;
+        margin-bottom: 12px;
+      }
+      .btn-buy:active { transform: scale(0.97); }
+      .btn-close-access {
+        width: 100%;
+        background: rgba(0, 0, 0, 0.04);
+        color: var(--hint-color);
+        border: 1px solid var(--border-color);
+        border-radius: 18px;
+        padding: 14px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
       * { box-sizing: border-box; margin: 0; padding: 0; }
 
       body {
@@ -664,6 +739,25 @@
       </a>
     </div>
 
+    <!-- No Access Modal -->
+    <div id="no-access-backdrop" onclick="if(event.target === this) closeNoAccessModal()">
+      <div class="no-access-card">
+        <div class="no-access-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <div class="no-access-title">Нет доступа</div>
+        <div class="no-access-text">
+          Эта функция доступна только в платной версии.<br>
+          Пожалуйста, приобретите подписку, чтобы продолжить работу.
+        </div>
+        <a href="https://t.me/BelekSadakbek" target="_blank" class="btn-buy" onclick="closeNoAccessModal()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9"/><path d="M14 17h5"/><circle cx="17" cy="12" r="2"/><path d="M7 13h2"/><path d="M3 13h2"/><path d="M3 17h18v-2a4 4 0 0 1-4-4V5h-2V3h-2v2H8a5 5 0 0 0-5 5v7Z"/></svg>
+          Узнать стоимость
+        </a>
+        <button class="btn-close-access" onclick="closeNoAccessModal()">Закрыть</button>
+      </div>
+    </div>
+
     <script>
       const tg = window.Telegram.WebApp;
       // Инициализация будет в window.onload ниже
@@ -696,6 +790,15 @@
           if (initData) headers["X-Telegram-Init-Data"] = initData;
           if (webToken) headers["X-Web-Token"] = webToken;
           return headers;
+      }
+
+      function showNoAccessModal() {
+        document.getElementById("no-access-backdrop").style.display = "flex";
+        if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("warning");
+      }
+
+      function closeNoAccessModal() {
+        document.getElementById("no-access-backdrop").style.display = "none";
       }
 
       if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
@@ -740,6 +843,11 @@
           });
           const data = await res.json();
           if (!res.ok || data.registered === false || data.error) {
+            if (res.status === 403) {
+                showNoAccessModal();
+                hideAppLoader();
+                return;
+            }
             tg.showAlert(data.error || "Ошибка загрузки профиля");
             window.location.href = "/";
             return;
@@ -818,7 +926,11 @@
           });
           const data = await res.json();
           if (data.error) {
-            tg.showAlert(data.error);
+            if (res.status === 403) {
+                showNoAccessModal();
+            } else {
+                tg.showAlert(data.error);
+            }
             closeAuthModal();
             return;
           }
@@ -981,7 +1093,13 @@
               if (res.ok) {
                   tg.showAlert("✅ Пароль успешно установлен!");
                   closePasswordModal();
-              } else tg.showAlert(data.error);
+              } else {
+                  if (res.status === 403) {
+                      showNoAccessModal();
+                  } else {
+                      tg.showAlert(data.error);
+                  }
+              }
           } catch(e) { tg.showAlert("Ошибка сохранения пароля"); }
       }
 
@@ -1043,7 +1161,11 @@
               window.location.href = "/";
             });
           } else {
-            tg.showAlert(data.error || "Ошибка удаления");
+              if (res.status === 403) {
+                  showNoAccessModal();
+              } else {
+                  tg.showAlert(data.error || "Ошибка удаления");
+              }
           }
         } catch(e) {
           tg.showAlert("Ошибка сети");

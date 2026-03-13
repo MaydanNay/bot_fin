@@ -73,8 +73,7 @@ VERBOSE = os.getenv("VERBOSE", "0").lower() in {"1", "true", "yes"}
 ADMIN_IDS = set()
 
 HARDCODED_ADMIN_PHONES = {
-    "+77024383624", "77024383624", "7024383624", "87024383624",
-    "+77769827077", "77769827077", "7769827077", "87769827077"
+    "+77024383624", "77024383624", "7024383624", "87024383624"
 }
 
 DEFAULT_REPLY = (
@@ -2159,7 +2158,22 @@ async def api_admin_add_user(request):
         if role == "admin" and not await is_owner(uid_str):
             return web.json_response({"error": "Only Owner can add admins"}, status=403)
             
-        await db.admin_add_user(phone, months, is_admin=(role == "admin"))
+        is_admin_flag = (role == "admin")
+        await db.admin_add_user(phone, months, is_admin=is_admin_flag)
+        
+        # Синхронизация ADMIN_IDS и таблицы admins если пользователь уже имеет UID
+        user_by_ph = await db.get_user_by_phone(phone)
+        if user_by_ph and user_by_ph.get("uid"):
+            target_uid = user_by_ph["uid"]
+            if target_uid.isdigit():
+                target_int = int(target_uid)
+                if is_admin_flag:
+                    await db.add_admin(target_int)
+                    ADMIN_IDS.add(target_int)
+                else:
+                    await db.remove_admin(target_int)
+                    ADMIN_IDS.discard(target_int)
+            invalidate_cache(target_uid)
         return web.json_response({"status": "ok"})
     except Exception as e:
         return web.json_response({"error": str(e)}, status=500)
@@ -2511,6 +2525,46 @@ async def api_admin_revoke_access(request):
             
         return web.json_response({"status": "ok"})
     except Exception as e:
+        return web.json_response({"error": str(e)}, status=500)
+
+@routes.post("/api/admin/delete_user")
+async def api_admin_delete_user(request):
+    """Полное удаление пользователя администратором."""
+    uid_str = await get_auth_user_id(request)
+    if not uid_str or not await is_admin(uid_str):
+        return web.json_response({"error": "Forbidden"}, status=403)
+    try:
+        data = await request.json()
+        target_uid = data.get("uid")
+        if not target_uid:
+            return web.json_response({"error": "Missing uid"}, status=400)
+            
+        # Запрещаем удалять себя или владельца
+        if target_uid == uid_str or await is_owner(target_uid):
+             return web.json_response({"error": "Cannot delete owner or self"}, status=403)
+
+        # Останавливаем юзербот (если запущен)
+        client = user_clients.pop(target_uid, None)
+        if client:
+            try: await client.disconnect()
+            except Exception: pass
+            
+        # Удаляем из БД (через db.py: удаляет диалоги, каналы и юзера)
+        deleted = await db.delete_user(target_uid)
+        
+        # Также чистим из таблицы admins и ADMIN_IDS
+        if target_uid.isdigit():
+            target_int = int(target_uid)
+            await db.remove_admin(target_int)
+            if target_int in ADMIN_IDS:
+                ADMIN_IDS.discard(target_int)
+            
+        invalidate_cache(target_uid)
+        log.info(f"Admin {uid_str} deleted user account {target_uid}")
+        
+        return web.json_response({"status": "ok"})
+    except Exception as e:
+        log.error(f"Admin delete user error: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 async def init_web_server():

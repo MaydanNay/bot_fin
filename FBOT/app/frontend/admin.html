@@ -151,9 +151,77 @@
         margin-left: 6px;
         vertical-align: middle;
       }
+
+      /* No Access Modal Styles */
+      #no-access-backdrop {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        background: rgba(15, 23, 42, 0.9);
+        backdrop-filter: blur(8px);
+        z-index: 9999;
+        display: none;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+      }
+      .no-access-card {
+        background: var(--secondary-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 24px;
+        padding: 32px 24px;
+        width: 100%;
+        max-width: 340px;
+        text-align: center;
+        box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+      }
+      .no-access-icon {
+        width: 64px; height: 64px;
+        background: var(--accent-gradient);
+        border-radius: 20px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 32px;
+        margin: 0 auto 20px;
+      }
+      .no-access-title { font-size: 20px; font-weight: 700; margin-bottom: 12px; }
+      .no-access-text { font-size: 14px; color: var(--hint-color); margin-bottom: 24px; line-height: 1.6; }
+      .btn-buy {
+        background: var(--button-color);
+        color: white;
+        border: none;
+        padding: 16px;
+        border-radius: 12px;
+        width: 100%;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        display: block;
+        text-decoration: none;
+        margin-bottom: 12px;
+      }
+      .btn-close-modal {
+        background: transparent;
+        color: var(--hint-color);
+        border: none;
+        padding: 8px;
+        font-size: 14px;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
+    <!-- No Access Modal -->
+    <div id="no-access-backdrop">
+      <div class="no-access-card">
+        <div class="no-access-icon">🔒</div>
+        <div class="no-access-title">Доступ ограничен</div>
+        <div class="no-access-text">
+          Для использования этой функции необходима активная подписка или права администратора.
+        </div>
+        <a href="https://t.me/BelekSadakbek" target="_blank" class="btn-buy">Узнать стоимость</a>
+        <button class="btn-close-modal" onclick="closeNoAccessModal()">Закрыть</button>
+      </div>
+    </div>
     <!-- Modal Add User -->
     <div id="add-user-backdrop" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); z-index: 1000; display: none; justify-content: center; align-items: center; padding: 20px;">
       <div class="user-card" style="width: 100%; max-width: 400px; text-align: center; border: 1px solid rgba(255,255,255,0.1); background: #1e293b; padding: 32px;">
@@ -231,7 +299,8 @@
          </div>
          
          <div style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 15px;">
-            <button class="btn-opt" style="width: 100%; background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2);" onclick="revokeAccessFromModal()">❌ Аннулировать доступ</button>
+            <button class="btn-opt" style="width: 100%; background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); margin-bottom: 10px;" onclick="revokeAccessFromModal()">❌ Аннулировать доступ</button>
+            <button class="btn-opt" style="width: 100%; background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);" onclick="deleteUserFromModal()">🗑️ Удалить пользователя</button>
          </div>
       </div>
     </div>
@@ -278,12 +347,24 @@
 
             document.getElementById("stat-active").innerText = activeCount;
             renderUsers();
+          } else if (res.status === 403) {
+            showNoAccessModal();
           } else {
             showToast(data.error || "Ошибка доступа");
           }
         } catch (e) {
           showToast("Ошибка сети");
         }
+      }
+
+      function showNoAccessModal() {
+        document.getElementById("no-access-backdrop").style.display = "flex";
+        tg.HapticFeedback.notificationOccurred("warning");
+      }
+
+      function closeNoAccessModal() {
+        document.getElementById("no-access-backdrop").style.display = "none";
+        window.location.href = "/profile";
       }
 
       function renderUsers() {
@@ -394,6 +475,36 @@
           if (!currentEditingPhone) return;
           if (await revokeAccess(currentEditingPhone)) {
               closeUserSettings();
+          }
+      }
+
+      async function deleteUserFromModal() {
+          if (!currentEditingUid) return;
+          
+          // Первое подтверждение
+          if (!confirm("ВНИМАНИЕ! Вы уверены, что хотите ПОЛНОСТЬЮ УДАЛИТЬ этого пользователя и все его данные? Это действие необратимо.")) return;
+          
+          // Второе подтверждение (двойное)
+          if (!confirm("ПОДТВЕРДИТЕ ЕЩЕ РАЗ: Вы действительно хотите безвозвратно удалить аккаунт " + (currentEditingPhone || currentEditingUid) + "?")) return;
+
+          tg.HapticFeedback.impactOccurred("heavy");
+          try {
+              const res = await fetch(`${API_BASE}/api/admin/delete_user`, {
+                  method: "POST",
+                  headers: getAuthHeaders(),
+                  body: JSON.stringify({ uid: currentEditingUid })
+              });
+              
+              if (res.ok) {
+                  showToast("Пользователь полностью удален!");
+                  closeUserSettings();
+                  loadUsers();
+              } else {
+                  const data = await res.json();
+                  showToast(data.error || "Ошибка удаления");
+              }
+          } catch (e) {
+              showToast("Ошибка сети");
           }
       }
 
