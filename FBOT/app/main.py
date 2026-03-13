@@ -1651,14 +1651,13 @@ async def api_get_state(request):
     
     # Срок доступа
     if is_admin_flag:
-        if await is_admin(uid_str):
-            resp["expires_at"] = "Безлимит"
+        resp["expires_at"] = "Безлимит"
+    else:
+        exp = udata.get("expires_at")
+        if isinstance(exp, (datetime, date)):
+            resp["expires_at"] = exp.strftime("%d.%m.%Y %H:%M")
         else:
-            exp = udata.get("expires_at")
-            if isinstance(exp, (datetime, date)):
-                resp["expires_at"] = exp.strftime("%d.%m.%Y %H:%M")
-            else:
-                resp["expires_at"] = "Доступ не оплачен"
+            resp["expires_at"] = "Доступ не оплачен"
         
     resp["expired"] = expired
     

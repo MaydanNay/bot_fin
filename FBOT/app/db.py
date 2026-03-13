@@ -289,7 +289,7 @@ async def add_crm_contacts(uid: str, contacts: List[Any], source: Optional[str] 
             status = await conn.execute("""
                 INSERT INTO crm_contacts (uid, contact, source)
                 SELECT $1, unnest($2::text[]), $3
-                ON CONFLICT (uid, contact) DO UPDATE SET source = EXCLUDED.source
+                ON CONFLICT (uid, contact) DO NOTHING
             """, uid, unique_contacts, source)
             
             if status and status.startswith("INSERT "):
