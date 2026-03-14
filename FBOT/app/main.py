@@ -1043,9 +1043,9 @@ async def cmd_user_add_channel(event):
     await event.respond(f"Добавляю: {link}\nПодписываюсь...")
     cid = await ensure_join(client, link)
     if cid:
-        await db.add_channel(uid_str, link)
+        await db.add_channel(uid_str, link, channel_id=cid)
         invalidate_cache(uid_str)
-        await event.respond("Готово! Канал добавлен и юзербот на него подписался ✅")
+        await event.respond(f"Готово! Канал добавлен (ID: {cid}) и юзербот на него подписался ✅")
     else:
         await event.respond("Не удалось подписаться на этот канал 🚫")
 @bot_client.on(events.NewMessage(pattern=r"^/add_group\s+(.+)$"))
@@ -1062,9 +1062,9 @@ async def cmd_user_add_group(event):
     await event.respond(f"Добавляю группу: {link}\nПодписываюсь...")
     cid = await ensure_join(client, link)
     if cid:
-        await db.add_channel(uid_str, link, ctype="group")
+        await db.add_channel(uid_str, link, channel_id=cid, ctype="group")
         invalidate_cache(uid_str)
-        await event.respond("Готово! Группа добавлена ✅")
+        await event.respond(f"Готово! Группа добавлена (ID: {cid}) ✅")
     else:
         await event.respond("Не удалось подписаться на эту группу 🚫")
 
@@ -1662,11 +1662,9 @@ async def api_get_state(request):
         now = datetime.now(db.TZ_KZ)
         if expires_at.tzinfo is None:
             now = now.replace(tzinfo=None)
+            expired = expires_at < now
         else:
-            now = now.astimezone(expires_at.tzinfo)
-        
-        if expires_at < now:
-            expired = True
+            expired = expires_at < now.astimezone(expires_at.tzinfo)
 
     resp = dict(udata)
     resp["avatar_url"] = avatar_url
@@ -1829,8 +1827,8 @@ async def api_get_profile(request):
         "total_crm": crm_count,
         "avatar_url": await download_user_avatar(uid_str),
         "expires_at": expires_str,
-        "expired": (expires_at < datetime.now(db.TZ_KZ).replace(tzinfo=expires_at.tzinfo)) if expires_at and expires_at.tzinfo else (expires_at < datetime.now(db.TZ_KZ).replace(tzinfo=None) if expires_at else False),
-        "version": "1.2.0"
+        "expired": is_subscribed(udata) is False if expires_at else False,
+        "version": "1.2.1"
     }
     return web.json_response(profile_data)
 

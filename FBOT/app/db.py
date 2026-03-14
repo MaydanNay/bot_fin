@@ -99,7 +99,7 @@ async def init_db():
 
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS channels (
-                uid VARCHAR(64) REFERENCES users(uid) ON DELETE CASCADE,
+                uid VARCHAR(64) REFERENCES users(uid) ON DELETE CASCADE ON UPDATE CASCADE,
                 channel_link VARCHAR(255),
                 PRIMARY KEY (uid, channel_link)
             );
@@ -141,7 +141,20 @@ async def init_db():
         
         for table, column, col_type in migrations:
             try:
+                # Пытаемся добавить колонку
                 await conn.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {col_type};")
+                # Для таблицы channels обновляем внешний ключ, чтобы он поддерживал ON UPDATE CASCADE
+                if table == "channels" and column == "uid":
+                    try:
+                        # Удаляем старое ограничение и добавляем новое (если оно не было создано с CASCADE)
+                        await conn.execute("""
+                            ALTER TABLE channels DROP CONSTRAINT IF EXISTS channels_uid_fkey;
+                            ALTER TABLE channels ADD CONSTRAINT channels_uid_fkey 
+                            FOREIGN KEY (uid) REFERENCES users(uid) ON DELETE CASCADE ON UPDATE CASCADE;
+                        """)
+                    except Exception as fkey_err:
+                        log.debug(f"Could not update fkey for channels: {fkey_err}")
+
             except Exception as e:
                 log.debug(f"Migration for {table}.{column} skipped: {e}")
 
